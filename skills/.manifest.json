@@ -1,0 +1,87 @@
+{
+  "skills": {
+    "code-review": {
+      "name": "code-review",
+      "version": "11df3739e51cc9e8421dcb51504567febfc9321e",
+      "source": "zencoderai/skills@main:code-review",
+      "contentHash": "44769422eb0cb651ebce03f6b1361c15c9c8feeb05b77e9a3ec74a7a7b7efe69",
+      "files": [
+        "SKILL.md"
+      ],
+      "installedAt": "2026-03-09T03:12:13.878Z"
+    },
+    "playwright": {
+      "name": "playwright",
+      "version": "e1b3286960376c7b81ec84b9208ae185f7f07ae8",
+      "source": "zencoderai/skills@main:playwright",
+      "contentHash": "51d290fefca7dd442e8d3aca44a7870ec18cd37e100a81a4dd54eb5c57cb2dcf",
+      "files": [
+        "API_REFERENCE.md",
+        "SKILL.md",
+        "lib/helpers.js",
+        "package.json",
+        "run.js"
+      ],
+      "installedAt": "2026-03-09T03:12:13.878Z"
+    },
+    "plan": {
+      "name": "plan",
+      "version": "1.0.0",
+      "source": "bundled",
+      "contentHash": "f239af7e0d2318386dc84739c19313ec40d30e9b34c57e3a257c163ff19445fb",
+      "files": [
+        "SKILL.md"
+      ],
+      "installedAt": "2026-03-09T03:19:52.019Z"
+    },
+    "research": {
+      "name": "research",
+      "version": "1.0.0",
+      "source": "bundled",
+      "contentHash": "9403028da22ce5c51ab25d8b2cfbf363e28b314f539e0a32c87492506a0f516e",
+      "files": [
+        "SKILL.md"
+      ],
+      "installedAt": "2026-03-09T03:19:52.019Z"
+    },
+    "init": {
+      "name": "init",
+      "version": "f311e092af9f1dadb39d6e3b285e613489cd9827",
+      "source": "zencoderai/skills@main:init",
+      "contentHash": "5aeee8c4b8e09f47464facc73f911cf5d018a21e8bb6444d46facebece96cbf9",
+      "files": [
+        "SKILL.md"
+      ],
+      "installedAt": "2026-04-11T00:34:32.614Z"
+    },
+    "cross-review": {
+      "name": "cross-review",
+      "version": "5a671d8947d936c5b84781dba725887a26762b0a",
+      "source": "zencoderai/skills@main:cross-review",
+      "contentHash": "11495293c40b27ada2ab83aa23d6f1173dae7e550042de8235c0cadb6c99ba37",
+      "files": [
+        "SKILL.md"
+      ],
+      "installedAt": "2026-04-11T00:34:32.614Z"
+    },
+    "comprehensive-review": {
+      "name": "comprehensive-review",
+      "version": "b3a409abe2cc29324465c4d4f6d96dd3a828f30a",
+      "source": "zencoderai/skills@main:comprehensive-review",
+      "contentHash": "be4e59dbf7e346047b254cddce1c9bc7f1a73755f10d216392c4042fa254bc3b",
+      "files": [
+        "SKILL.md",
+        "criteria/architecture.md",
+        "criteria/bugs.md",
+        "criteria/code-quality.md",
+        "criteria/performance.md",
+        "criteria/requirements-compliance.md",
+        "criteria/security.md",
+        "fetch-diff.md",
+        "scripts/post_review.js"
+      ],
+      "installedAt": "2026-04-11T00:34:32.614Z"
+    }
+  },
+  "bundledManifestHash": "ef2ab8a30ca39c46a8405bf8adc2fab662d482c72327e96c1c7a2313f8e9bfe4"
+}

@@ -1,0 +1,4 @@
+node_modules/
+*.log
+bun.lockb
+dist/
