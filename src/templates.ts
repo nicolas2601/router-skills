@@ -77,3 +77,29 @@ export const SkillEnforcer: Plugin = async () => {
 
 export default SkillEnforcer
 `
+
+/**
+ * opencode instructions rule — plain Markdown, registered in opencode.json's
+ * `instructions[]`. Belt-and-suspenders: guarantees the skill-eval directive is in
+ * context every session even if the plugin fails to load (opencode reads instruction
+ * files unconditionally, whereas a plugin can error out at startup).
+ */
+export const SKILL_RULE_MD = `# MANDATORY SKILL EVALUATION (blocking — before every technical response)
+
+You have a large catalog of Agent Skills discovered globally. Before answering a
+technical request you MUST evaluate them and use the best fit. This is not optional.
+
+Rules:
+1. Pick the MOST SPECIFIC skill(s) for the task, not a generic default. Prefer a
+   framework/domain skill (e.g. nextjs-best-practices, laravel-security,
+   sql-optimization-patterns) over a broad one (e.g. coding-standards) when both match.
+2. A task can match SEVERAL skills — load ALL that apply, not just one.
+3. Do NOT keep reaching for the same handful of skills out of habit. Re-evaluate the
+   full catalog each turn; the best skill may be one you have never used.
+4. If any skill is relevant: state in one line which you are using and why, load it via
+   the skill tool BEFORE writing code, then proceed.
+5. If nothing genuinely fits, proceed directly — no forced match.
+
+Loading a skill's SKILL.md before the work is a discipline requirement. Naming a skill
+without loading it is worthless. Skip only for trivial non-technical replies.
+`

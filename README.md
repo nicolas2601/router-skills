@@ -51,7 +51,7 @@ ROUTER_SKILLS_DIR=/path/to/skills ./router-skills --yes
 | Target | Enforcement | Config |
 |--------|-------------|--------|
 | Claude Code | `~/.claude/hooks/skill-forced-eval.mjs` (Node hook, runs on Win+posix) | wired into `~/.claude/settings.json` |
-| opencode | `~/.config/opencode/plugins/skill-enforcer.ts` (`experimental.chat.system.transform`) | `permission.skill["*"] = "allow"` in `opencode.json` |
+| opencode | `~/.config/opencode/plugins/skill-enforcer.ts` (`experimental.chat.system.transform`) + `skill-enforcement.md` registered in `instructions[]` | `permission.skill["*"] = "allow"` in `opencode.json` |
 | Skills | links `skills/*` → `~/.claude/skills/` | opencode reads `~/.claude/skills` globally too, so both harnesses share one source |
 | Agents | links `agents/*` → `~/.claude/agents/` (+ `~/.config/opencode/agents/` when opencode is chosen) | category dirs are dir-symlinks/junctions; loose root `*.md` are copied (portable on Windows) |
 

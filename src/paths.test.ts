@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test"
 import nodePath from "node:path"
-import { claudeHookPath, claudeSettings, claudeSkillsDir, claudeAgentsDir, opencodePlugin, opencodeConfig, opencodeAgentsDir } from "./paths.ts"
+import { claudeHookPath, claudeSettings, claudeSkillsDir, claudeAgentsDir, opencodePlugin, opencodeConfig, opencodeAgentsDir, opencodeRuleFile } from "./paths.ts"
 
 const win = nodePath.win32
 const posix = nodePath.posix
@@ -20,6 +20,9 @@ test("windows: claude agents dir", () => {
 })
 test("windows: opencode agents dir", () => {
   expect(opencodeAgentsDir("C:\\Users\\nico", win)).toBe("C:\\Users\\nico\\.config\\opencode\\agents")
+})
+test("windows: opencode rule file", () => {
+  expect(opencodeRuleFile("C:\\Users\\nico", win)).toBe("C:\\Users\\nico\\.config\\opencode\\skill-enforcement.md")
 })
 test("windows: opencode plugin", () => {
   expect(opencodePlugin("C:\\Users\\nico", win)).toBe("C:\\Users\\nico\\.config\\opencode\\plugins\\skill-enforcer.ts")

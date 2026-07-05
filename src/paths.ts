@@ -22,3 +22,5 @@ export const opencodePlugin = (home: string, p: PathImpl = nodePath) =>
   p.join(opencodePluginsDir(home, p), "skill-enforcer.ts")
 export const opencodeConfig = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "opencode.json")
 export const opencodeAgentsDir = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "agents")
+export const opencodeRuleFile = (home: string, p: PathImpl = nodePath) =>
+  p.join(opencodeBase(home, p), "skill-enforcement.md")
