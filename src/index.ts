@@ -5,6 +5,7 @@ import { detectTargets, detectReportOnly } from "./detect.ts"
 import { installClaude } from "./installers/claude.ts"
 import { installOpencode } from "./installers/opencode.ts"
 import { installSkills } from "./installers/skills.ts"
+import { installAgents } from "./installers/agents.ts"
 import type { Action } from "./util.ts"
 
 const argv = new Set(process.argv.slice(2))
@@ -26,6 +27,7 @@ What it does:
   • Claude Code  → installs forced-eval UserPromptSubmit hook + wires settings.json
   • opencode     → installs skill-enforcer plugin + permission.skill allow
   • skills       → symlinks the bundled pack into ~/.claude/skills (both harnesses read it)
+  • agents       → links the bundled agent pack into ~/.claude/agents (+ opencode agents when chosen)
 `)
   process.exit(0)
 }
@@ -66,10 +68,12 @@ async function main() {
   // pick targets + skills
   let chosen: string[]
   let doSkills: boolean
+  let doAgents: boolean
 
   if (YES) {
     chosen = present.map((t) => t.id)
     doSkills = true
+    doAgents = true
   } else {
     const sel = await multiselect({
       message: "Configure skill enforcement for:",
@@ -83,6 +87,10 @@ async function main() {
     const sk = await confirm({ message: "Also link the bundled skill pack into ~/.claude/skills?", initialValue: true })
     if (isCancel(sk)) return cancel("Cancelled.")
     doSkills = sk as boolean
+
+    const ag = await confirm({ message: "Also link the bundled agent pack into ~/.claude/agents (+ opencode)?", initialValue: true })
+    if (isCancel(ag)) return cancel("Cancelled.")
+    doAgents = ag as boolean
   }
 
   // run
@@ -100,6 +108,10 @@ async function main() {
   if (doSkills) {
     s.message("Linking skills…")
     printActions("Skills", installSkills(DRY).actions)
+  }
+  if (doAgents) {
+    s.message("Linking agents…")
+    printActions("Agents", installAgents(DRY, chosen.includes("opencode")).actions)
   }
 
   s.stop(DRY ? "Dry-run complete — nothing written." : "Done.")

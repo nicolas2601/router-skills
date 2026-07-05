@@ -14,9 +14,11 @@ export const claudeHookPath = (home: string, p: PathImpl = nodePath) =>
   p.join(claudeHooksDir(home, p), "skill-forced-eval.mjs")
 export const claudeSettings = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "settings.json")
 export const claudeSkillsDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "skills")
+export const claudeAgentsDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "agents")
 
 export const opencodeBase = (home: string, p: PathImpl = nodePath) => p.join(home, ".config", "opencode")
 export const opencodePluginsDir = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "plugins")
 export const opencodePlugin = (home: string, p: PathImpl = nodePath) =>
   p.join(opencodePluginsDir(home, p), "skill-enforcer.ts")
 export const opencodeConfig = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "opencode.json")
+export const opencodeAgentsDir = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "agents")

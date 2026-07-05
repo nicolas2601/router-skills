@@ -6,6 +6,8 @@ import { resolve, join, dirname } from "node:path"
 export const ROOT = resolve(import.meta.dir, "..")
 /** Bundled skill pack. Overridable via ROUTER_SKILLS_DIR for compiled binaries. */
 export const SKILLS = process.env.ROUTER_SKILLS_DIR ?? join(ROOT, "skills")
+/** Bundled agent pack. Overridable via ROUTER_AGENTS_DIR for compiled binaries. */
+export const AGENTS = process.env.ROUTER_AGENTS_DIR ?? join(ROOT, "agents")
 export const HOME = homedir()
 
 export const exists = (p: string) => existsSync(p)

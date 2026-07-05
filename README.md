@@ -53,6 +53,7 @@ ROUTER_SKILLS_DIR=/path/to/skills ./router-skills --yes
 | Claude Code | `~/.claude/hooks/skill-forced-eval.mjs` (Node hook, runs on Win+posix) | wired into `~/.claude/settings.json` |
 | opencode | `~/.config/opencode/plugins/skill-enforcer.ts` (`experimental.chat.system.transform`) | `permission.skill["*"] = "allow"` in `opencode.json` |
 | Skills | links `skills/*` → `~/.claude/skills/` | opencode reads `~/.claude/skills` globally too, so both harnesses share one source |
+| Agents | links `agents/*` → `~/.claude/agents/` (+ `~/.config/opencode/agents/` when opencode is chosen) | category dirs are dir-symlinks/junctions; loose root `*.md` are copied (portable on Windows) |
 
 Every JSON it touches is backed up as `<file>.bak.<timestamp>` first. Re-running is
 safe — already-applied steps are detected and skipped.
@@ -68,6 +69,14 @@ safe — already-applied steps are detected and skipped.
 
 `skills/` holds the bundled pack. Add or remove skill folders here (each is a directory with
 a `SKILL.md`). This dir is the single source of truth — `~/.claude/skills` entries link back to it.
+
+## Agent pack
+
+`agents/` holds the bundled sub-agent pack, organised by category (`engineering/`, `design/`,
+`testing/`, …) plus an `opencode/` folder for opencode-native agents. Each agent is a `.md` file
+with YAML frontmatter. On install, category dirs are linked into `~/.claude/agents/` (and
+`~/.config/opencode/agents/` when opencode is a chosen target); loose root `*.md` are copied so
+they stay portable on Windows. Add or remove agent files here — the pack is the source of truth.
 
 ## Detected but not configured
 
