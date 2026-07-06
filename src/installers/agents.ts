@@ -1,5 +1,5 @@
 import { readdirSync, existsSync, symlinkSync, lstatSync, readFileSync, writeFileSync, rmSync, realpathSync } from "node:fs"
-import { join, basename } from "node:path"
+import { join, basename, sep } from "node:path"
 import { HOME, AGENTS, ensureDir, type Action } from "../util.ts"
 import { claudeAgentsDir, opencodeAgentsDir } from "../paths.ts"
 
@@ -123,10 +123,13 @@ function convertOpencodeAgents(dryRun: boolean): Action {
   }
 }
 
-/** True when a file already looks like a valid opencode agent (has a mode:). */
+/** True when a file already looks like a valid opencode agent (has a mode: in its frontmatter). */
 function isValidOpencodeAgent(p: string): boolean {
   try {
-    return /\bmode:\s*(subagent|primary|all)\b/.test(readFileSync(p, "utf8").slice(0, 512))
+    // scan the whole frontmatter block, not a fixed byte window — a long description
+    // must not push `mode:` out of view and cause us to overwrite a real user agent
+    const { fm } = parseFrontmatter(readFileSync(p, "utf8"))
+    return /^(subagent|primary|all)$/.test((fm.mode ?? "").trim())
   } catch {
     return false
   }
@@ -151,7 +154,9 @@ function staleLinks(dir: string): string[] {
     const p = join(dir, name)
     if (!isLink(p)) continue
     try {
-      if (realpathSync(p).startsWith(packRoot)) out.push(p)
+      // match a real path boundary — `.../agents` must not match a sibling `.../agents-backup`
+      const rp = realpathSync(p)
+      if (rp === packRoot || rp.startsWith(packRoot + sep)) out.push(p)
     } catch {
       // broken link that can't resolve — a raw-install leftover; prune it too
       out.push(p)

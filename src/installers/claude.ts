@@ -29,9 +29,11 @@ export function installClaude(dryRun: boolean): Action[] {
 
   // 2. settings.json wiring (idempotent — matches old .sh or new .mjs installs)
   const read = readConfig<any>(settingsPath, {})
-  if (read.existed && !read.parsed) {
-    // Never overwrite a settings.json we can't parse — that would nuke the user's config.
-    actions.push({ label: "settings.json wiring", done: false, detail: "settings.json unreadable — left untouched, wire the hook manually" })
+  if (read.existed && !read.strict) {
+    // Only rewrite strict JSON. A jsonc/comment-bearing or unparseable settings.json is left
+    // untouched — rewriting it would strip comments or (worse) clobber a config we misread.
+    const why = read.parsed ? "not strict JSON (comments/jsonc)" : "unreadable"
+    actions.push({ label: "settings.json wiring", done: false, detail: `${why} — left untouched, wire the hook manually` })
     return actions
   }
   const settings = read.value

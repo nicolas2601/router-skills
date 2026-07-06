@@ -29,9 +29,11 @@ export function installOpencode(dryRun: boolean): Action[] {
 
   // 2. opencode.json: register instructions rule + permission.skill allow (one read/write)
   const read = readConfig<any>(configPath, {})
-  if (read.existed && !read.parsed) {
-    // opencode.json is jsonc-capable and often hand-edited — never clobber it if we can't parse it.
-    actions.push({ label: "opencode.json", done: false, detail: "unreadable — left untouched; add instructions[]+permission.skill manually" })
+  if (read.existed && !read.strict) {
+    // opencode.json is jsonc-capable and often hand-edited. Rewriting it would strip comments,
+    // and a lenient parse can misread — so only strict JSON is safe to modify. Otherwise skip.
+    const why = read.parsed ? "jsonc/comments present" : "unreadable"
+    actions.push({ label: "opencode.json", done: false, detail: `${why} — left untouched; add instructions[]+permission.skill manually` })
     return actions
   }
   const cfg = read.value

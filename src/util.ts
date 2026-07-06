@@ -34,8 +34,13 @@ export function readJSON<T = any>(file: string, fallback: T): T {
   }
 }
 
-/** Result of a defensive config read. `parsed` is false when the file exists but is unreadable. */
-export type ConfigRead<T> = { existed: boolean; parsed: boolean; value: T }
+/**
+ * Result of a defensive config read.
+ * - `parsed`: we obtained a usable object (strict JSON or lenient jsonc) — safe to READ.
+ * - `strict`: strict `JSON.parse` succeeded — the ONLY case where it's safe to WRITE back
+ *   (rewriting a jsonc file would strip comments, and lenient stripping can corrupt strings).
+ */
+export type ConfigRead<T> = { existed: boolean; parsed: boolean; strict: boolean; value: T }
 
 /**
  * Best-effort JSONC → JSON: strip block/line comments and trailing commas.
@@ -59,15 +64,16 @@ function stripJsonc(s: string): string {
  * so a hand-edited or jsonc config is never clobbered.
  */
 export function readConfig<T = any>(file: string, fallback: T): ConfigRead<T> {
-  if (!existsSync(file)) return { existed: false, parsed: true, value: fallback }
+  if (!existsSync(file)) return { existed: false, parsed: true, strict: true, value: fallback }
   const raw = readFileSync(file, "utf8")
   try {
-    return { existed: true, parsed: true, value: JSON.parse(raw) as T }
+    return { existed: true, parsed: true, strict: true, value: JSON.parse(raw) as T }
   } catch {
     try {
-      return { existed: true, parsed: true, value: JSON.parse(stripJsonc(raw)) as T }
+      // Lenient read for inspection only — NOT strict, so callers must not write it back.
+      return { existed: true, parsed: true, strict: false, value: JSON.parse(stripJsonc(raw)) as T }
     } catch {
-      return { existed: true, parsed: false, value: fallback }
+      return { existed: true, parsed: false, strict: false, value: fallback }
     }
   }
 }
