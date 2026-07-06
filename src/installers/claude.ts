@@ -1,5 +1,5 @@
 import { chmodSync } from "node:fs"
-import { HOME, backup, readJSON, writeJSON, writeText, ensureDir, type Action } from "../util.ts"
+import { HOME, backup, readConfig, writeJSON, writeText, ensureDir, type Action } from "../util.ts"
 import { HOOK_MJS } from "../templates.ts"
 import { claudeHooksDir, claudeHookPath, claudeSettings } from "../paths.ts"
 
@@ -28,7 +28,13 @@ export function installClaude(dryRun: boolean): Action[] {
   actions.push({ label: "hook script", done: !dryRun, detail: hookPath })
 
   // 2. settings.json wiring (idempotent — matches old .sh or new .mjs installs)
-  const settings = readJSON<any>(settingsPath, {})
+  const read = readConfig<any>(settingsPath, {})
+  if (read.existed && !read.parsed) {
+    // Never overwrite a settings.json we can't parse — that would nuke the user's config.
+    actions.push({ label: "settings.json wiring", done: false, detail: "settings.json unreadable — left untouched, wire the hook manually" })
+    return actions
+  }
+  const settings = read.value
   settings.hooks ??= {}
   settings.hooks.UserPromptSubmit ??= []
   const already = JSON.stringify(settings.hooks.UserPromptSubmit).includes("skill-forced-eval")

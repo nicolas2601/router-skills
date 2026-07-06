@@ -35,6 +35,9 @@ cd router-skills && bun install
 bun run start          # interactive TUI
 bun run dry            # preview, writes nothing
 bun run install:all    # configure everything detected, no prompts
+bun run src/index.ts --verify   # audit what's installed (read-only)
+bun run typecheck      # tsc --noEmit
+bun test               # path + conversion + cross-platform tests
 ```
 
 ### Prebuilt binary
@@ -53,7 +56,8 @@ ROUTER_SKILLS_DIR=/path/to/skills ./router-skills --yes
 | Claude Code | `~/.claude/hooks/skill-forced-eval.mjs` (Node hook, runs on Win+posix) | wired into `~/.claude/settings.json` |
 | opencode | `~/.config/opencode/plugins/skill-enforcer.ts` (`experimental.chat.system.transform`) + `skill-enforcement.md` registered in `instructions[]` | `permission.skill["*"] = "allow"` in `opencode.json` |
 | Skills | links `skills/*` → `~/.claude/skills/` | opencode reads `~/.claude/skills` globally too, so both harnesses share one source |
-| Agents | links `agents/*` → `~/.claude/agents/` (+ `~/.config/opencode/agents/` when opencode is chosen) | category dirs are dir-symlinks/junctions; loose root `*.md` are copied (portable on Windows) |
+| Agents (Claude) | links `agents/*` → `~/.claude/agents/` | category dirs are dir-symlinks/junctions; loose root `*.md` copied (portable on Windows) |
+| Agents (opencode) | **converts** each agent → `~/.config/opencode/agents/*.md` | opencode's schema differs (`mode` required, `tools` is an object not a comma-string), so raw links error — each is rewritten to a minimal valid opencode agent, stale raw links pruned |
 
 Every JSON it touches is backed up as `<file>.bak.<timestamp>` first. Re-running is
 safe — already-applied steps are detected and skipped.

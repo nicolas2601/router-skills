@@ -1,7 +1,25 @@
-import { readdirSync, existsSync, symlinkSync, lstatSync } from "node:fs"
+import { readdirSync, existsSync, symlinkSync, lstatSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { HOME, SKILLS, ensureDir, type Action } from "../util.ts"
 import { claudeSkillsDir } from "../paths.ts"
+
+/**
+ * A skill is linkable only if its SKILL.md opens with a `---` frontmatter block that
+ * declares a `name:`. Skipping malformed skills keeps both harnesses from logging parse
+ * errors at startup (e.g. a SKILL.md with no frontmatter).
+ */
+export function isValidSkill(dir: string): boolean {
+  const md = join(dir, "SKILL.md")
+  if (!existsSync(md)) return false
+  try {
+    const head = readFileSync(md, "utf8").slice(0, 4096)
+    if (!/^﻿?---\r?\n/.test(head)) return false
+    const fm = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(head)
+    return !!fm && /^name:\s*\S/m.test(fm[1])
+  } catch {
+    return false
+  }
+}
 
 /**
  * Link bundled skills into the global Claude skills dir.
@@ -21,9 +39,13 @@ export function installSkills(dryRun: boolean): { actions: Action[]; linked: num
     return { actions, linked: 0, skipped: 0 }
   }
 
-  const names = readdirSync(SKILLS, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && existsSync(join(SKILLS, d.name, "SKILL.md")))
-    .map((d) => d.name)
+  const dirs = readdirSync(SKILLS, { withFileTypes: true }).filter((d) => d.isDirectory())
+  const names: string[] = []
+  let invalid = 0
+  for (const d of dirs) {
+    if (isValidSkill(join(SKILLS, d.name))) names.push(d.name)
+    else invalid++
+  }
 
   let linked = 0
   let skipped = 0
@@ -35,16 +57,21 @@ export function installSkills(dryRun: boolean): { actions: Action[]; linked: num
       skipped++
       continue
     }
-    if (!dryRun) symlinkSync(join(SKILLS, name), dest, linkType)
+    if (!dryRun) {
+      try {
+        symlinkSync(join(SKILLS, name), dest, linkType)
+      } catch {
+        continue
+      }
+    }
     linked++
   }
 
+  const invalidNote = invalid > 0 ? `, ${invalid} invalid skipped` : ""
   actions.push({
     label: "bundled skills",
     done: !dryRun,
-    detail: dryRun
-      ? `would link ${names.length - skipped} new, ${skipped} present (of ${names.length}) via ${linkType}`
-      : `linked ${linked} new, ${skipped} present (of ${names.length}) via ${linkType}`,
+    detail: `${dryRun ? "would link" : "linked"} ${dryRun ? names.length - skipped : linked} new, ${skipped} present (of ${names.length})${invalidNote} via ${linkType}`,
   })
   return { actions, linked, skipped }
 }

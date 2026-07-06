@@ -53,7 +53,7 @@ export function detectReportOnly(): ReportOnly[] {
     { id: "aider", name: "aider", paths: [".aider"], bins: ["aider"], note: "no skills model" },
   ]
   return checks
-    .map((c) => {
+    .map((c): ReportOnly | null => {
       const present = c.paths.some((p) => exists(join(HOME, p))) || c.bins.some((b) => onPath(b))
       return present ? { id: c.id, name: c.name, present, note: c.note } : null
     })

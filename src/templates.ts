@@ -29,7 +29,11 @@ Rules:
 CRITICAL: Mentioning a skill without calling Skill() is worthless. Activate, then act.
 Skip this evaluation only for trivial conversational replies with no technical task.\`;
 
-process.stdout.write(DIRECTIVE + "\\n");
+// Fail open: a hook crash must never block the user's prompt.
+try {
+  process.stdout.write(DIRECTIVE + "\\n");
+} catch {}
+process.exit(0);
 `
 
 /** opencode plugin — TS, auto-loaded from ~/.config/opencode/plugins/. */
@@ -62,14 +66,21 @@ Rules:
 Loading a skill's SKILL.md before the work is a discipline requirement. Naming a skill
 without loading it is worthless. Skip only for trivial non-technical replies.\`
 
+const MARKER = "MANDATORY SKILL EVALUATION"
+
 export const SkillEnforcer: Plugin = async () => {
   return {
     "experimental.chat.system.transform": async (_input: any, output: any) => {
-      if (Array.isArray(output.system) && output.system.length > 0) {
-        output.system[output.system.length - 1] += "\\n\\n" + SKILL_DIRECTIVE
-      } else {
-        output.system = output.system ?? []
-        output.system.push(SKILL_DIRECTIVE)
+      try {
+        if (!output || typeof output !== "object") return
+        const sys: any[] = Array.isArray(output.system) ? output.system : (output.system = [])
+        // idempotent — never inject the directive twice into the same request
+        if (sys.some((s) => typeof s === "string" && s.includes(MARKER))) return
+        const last = sys.length - 1
+        if (last >= 0 && typeof sys[last] === "string") sys[last] += "\\n\\n" + SKILL_DIRECTIVE
+        else sys.push(SKILL_DIRECTIVE)
+      } catch {
+        // A plugin error must never break the chat pipeline — fail open.
       }
     },
   }

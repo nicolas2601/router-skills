@@ -1,4 +1,4 @@
-import { HOME, backup, readJSON, writeJSON, writeText, ensureDir, type Action } from "../util.ts"
+import { HOME, backup, readConfig, writeJSON, writeText, ensureDir, type Action } from "../util.ts"
 import { PLUGIN_TS, SKILL_RULE_MD } from "../templates.ts"
 import { opencodePluginsDir, opencodePlugin, opencodeConfig, opencodeRuleFile } from "../paths.ts"
 
@@ -28,7 +28,13 @@ export function installOpencode(dryRun: boolean): Action[] {
   actions.push({ label: "rule file", done: !dryRun, detail: rulePath })
 
   // 2. opencode.json: register instructions rule + permission.skill allow (one read/write)
-  const cfg = readJSON<any>(configPath, {})
+  const read = readConfig<any>(configPath, {})
+  if (read.existed && !read.parsed) {
+    // opencode.json is jsonc-capable and often hand-edited — never clobber it if we can't parse it.
+    actions.push({ label: "opencode.json", done: false, detail: "unreadable — left untouched; add instructions[]+permission.skill manually" })
+    return actions
+  }
+  const cfg = read.value
 
   // instructions[] — path relative to ~/.config/opencode (where opencode.json lives)
   const RULE_REF = "skill-enforcement.md"

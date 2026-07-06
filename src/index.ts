@@ -6,12 +6,14 @@ import { installClaude } from "./installers/claude.ts"
 import { installOpencode } from "./installers/opencode.ts"
 import { installSkills } from "./installers/skills.ts"
 import { installAgents } from "./installers/agents.ts"
+import { verify } from "./verify.ts"
 import type { Action } from "./util.ts"
 
 const argv = new Set(process.argv.slice(2))
 const YES = argv.has("--yes") || argv.has("-y")
 const DRY = argv.has("--dry-run") || argv.has("-n")
 const HELP = argv.has("--help") || argv.has("-h")
+const VERIFY = argv.has("--verify") || argv.has("-v")
 
 if (HELP) {
   console.log(`
@@ -21,6 +23,7 @@ Usage:
   router-skills            interactive TUI
   router-skills --yes      configure every detected CLI + link skills, no prompts
   router-skills --dry-run  show what would change, touch nothing
+  router-skills --verify   audit what's installed (read-only), then exit
   router-skills --help     this
 
 What it does:
@@ -40,7 +43,22 @@ function printActions(title: string, actions: Action[]) {
   note(lines.join("\n"), title)
 }
 
+function runVerify() {
+  intro(pc.bgMagenta(pc.black(" router-skills ")) + pc.cyan(" [verify]"))
+  const checks = verify()
+  const lines = checks.map((c) => {
+    const mark = c.ok === null ? pc.dim("–") : c.ok ? pc.green("✓") : pc.red("✗")
+    return `${mark} ${c.name} ${pc.dim("— " + c.detail)}`
+  })
+  note(lines.join("\n"), "Install health")
+  const failed = checks.filter((c) => c.ok === false).length
+  outro(failed === 0 ? pc.green("All checks passed.") : pc.red(`${failed} check(s) failed — re-run router-skills to fix.`))
+  process.exit(failed === 0 ? 0 : 1)
+}
+
 async function main() {
+  if (VERIFY) return runVerify()
+
   intro(pc.bgMagenta(pc.black(" router-skills ")) + (DRY ? pc.yellow(" [dry-run]") : ""))
 
   const targets = detectTargets()
