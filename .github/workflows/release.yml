@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Validate + test before releasing
+        run: |
+          bun run typecheck
+          bun run validate
+          bun run test
+
+      - name: Build all binaries
+        run: bun run build
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/router-skills
+            dist/router-skills.exe
+            dist/router-skills-macos
+          generate_release_notes: true
+          fail_on_unmatched_files: true

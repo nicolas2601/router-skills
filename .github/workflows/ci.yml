@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Validate skill + agent pack
+        run: bun run validate
+
+      - name: Test (cross-platform paths run natively per-OS)
+        run: bun run test
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64
+            out: router-skills
+          - target: bun-windows-x64
+            out: router-skills.exe
+          - target: bun-darwin-arm64
+            out: router-skills-macos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Compile ${{ matrix.out }}
+        run: bun build --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.out }} src/index.ts
+
+      - name: Smoke test (native binary only)
+        if: matrix.target == 'bun-linux-x64'
+        run: ./dist/router-skills --help
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.out }}
+          path: dist/${{ matrix.out }}
+          if-no-files-found: error
