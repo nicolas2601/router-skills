@@ -43,20 +43,32 @@ export function installOpencode(dryRun: boolean): Action[] {
   cfg.instructions = Array.isArray(cfg.instructions) ? cfg.instructions : []
   const hasRule = cfg.instructions.includes(RULE_REF)
 
-  // permission.skill["*"] = "allow"
   cfg.permission ??= {}
-  const curSkill = cfg.permission.skill
-  const needPerm = !curSkill || curSkill["*"] !== "allow"
 
-  if (!hasRule && !needPerm) {
-    actions.push({ label: "opencode.json", done: true, detail: "instructions + permission already set (skipped)" })
+  // permission.skill["*"] = "allow"  → let both harnesses actually load skills
+  const curSkill = cfg.permission.skill
+  const needSkill = !curSkill || curSkill["*"] !== "allow"
+
+  // permission.task["*"] = "allow"  → let primary agents auto-delegate to the converted
+  // subagents via the Task tool. Only fill a MISSING default: never override an explicit
+  // "*" the user already set (e.g. a deny), and keep any per-glob rules they added.
+  const curTask = cfg.permission.task
+  const needTask = curTask === undefined || (typeof curTask === "object" && curTask["*"] === undefined)
+
+  if (!hasRule && !needSkill && !needTask) {
+    actions.push({ label: "opencode.json", done: true, detail: "instructions + permissions already set (skipped)" })
   } else if (dryRun) {
-    const parts = [!hasRule ? "add instructions rule" : null, needPerm ? 'set skill["*"]="allow"' : null].filter(Boolean)
+    const parts = [
+      !hasRule ? "add instructions rule" : null,
+      needSkill ? 'set skill["*"]="allow"' : null,
+      needTask ? 'set task["*"]="allow"' : null,
+    ].filter(Boolean)
     actions.push({ label: "opencode.json", done: false, detail: "would " + parts.join(" + ") })
   } else {
     const bak = backup(configPath)
     if (!hasRule) cfg.instructions.push(RULE_REF)
-    if (needPerm) cfg.permission.skill = { ...(curSkill || {}), "*": "allow" }
+    if (needSkill) cfg.permission.skill = { ...(curSkill || {}), "*": "allow" }
+    if (needTask) cfg.permission.task = { "*": "allow", ...(typeof curTask === "object" ? curTask : {}) }
     writeJSON(configPath, cfg)
     actions.push({ label: "opencode.json", done: true, detail: bak ? `updated (backup: ${bak})` : "written (new file)" })
   }

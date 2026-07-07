@@ -59,11 +59,12 @@ export function verify(): Check[] {
     checks.push({ name: "opencode: config", ok: false, detail: "opencode.json unreadable" })
   } else {
     const hasRule = Array.isArray(cfg.value?.instructions) && cfg.value.instructions.includes("skill-enforcement.md")
-    const allow = cfg.value?.permission?.skill?.["*"] === "allow"
+    const skillAllow = cfg.value?.permission?.skill?.["*"] === "allow"
+    const taskAllow = cfg.value?.permission?.task?.["*"] === "allow"
     checks.push({
       name: "opencode: config",
-      ok: hasRule && allow,
-      detail: `instructions=${hasRule ? "yes" : "no"}, permission.skill=${allow ? "allow" : "unset"}`,
+      ok: hasRule && skillAllow && taskAllow,
+      detail: `instructions=${hasRule ? "yes" : "no"}, skill=${skillAllow ? "allow" : "unset"}, task=${taskAllow ? "allow" : "unset"}`,
     })
   }
 

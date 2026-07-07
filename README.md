@@ -63,7 +63,7 @@ ROUTER_SKILLS_DIR=/path/to/skills ROUTER_AGENTS_DIR=/path/to/agents ./router-ski
 | Target | Enforcement | Config |
 |--------|-------------|--------|
 | Claude Code | `~/.claude/hooks/skill-forced-eval.mjs` (Node hook, runs on Win + posix) | wired into `~/.claude/settings.json` |
-| opencode | `~/.config/opencode/plugins/skill-enforcer.ts` (`experimental.chat.system.transform`) **+** `skill-enforcement.md` registered in `instructions[]` | `permission.skill["*"] = "allow"` |
+| opencode | `~/.config/opencode/plugins/skill-enforcer.ts` (`experimental.chat.system.transform`) **+** `skill-enforcement.md` registered in `instructions[]` | `permission.skill["*"]` and `permission.task["*"]` set to `"allow"` |
 | Skills | links `skills/*` → `~/.claude/skills/` | opencode reads `~/.claude/skills` globally too, so both harnesses share one source |
 | Agents (Claude) | links `agents/*` → `~/.claude/agents/` | category dirs are dir-symlinks / Windows junctions; loose root `*.md` copied |
 | Agents (opencode) | **converts** each agent → `~/.config/opencode/agents/*.md` | opencode's schema differs (`mode` required, `tools` is an object not a comma-string), so raw links error — each is rewritten to a minimal valid opencode agent, and stale raw links from older installs are pruned |
@@ -108,6 +108,19 @@ junk is committed.
 file with YAML frontmatter. On install, Claude Code gets the raw pack linked into
 `~/.claude/agents/`; opencode gets a **converted** copy (schema-valid `mode: subagent` agents)
 in `~/.config/opencode/agents/`.
+
+### Using the specialized agents in opencode
+
+opencode supports subagents natively. The converted agents can be used two ways:
+
+- **Manually** — `@agent-name` in your message (works even if task permissions deny it).
+- **Automatically** — a primary agent delegates to them via the **Task tool**, based on each
+  agent's `description`. This requires `permission.task` to allow them, which the installer
+  enables globally (`permission.task["*"] = "allow"`).
+
+A **per-agent** `permission.task` (e.g. an orchestrator that sets `{"*": "deny"}`) overrides
+the global default for that agent — that's an explicit choice the installer never touches, so
+adjust it yourself if you want that agent to auto-delegate too.
 
 ## Detected but not configured
 
