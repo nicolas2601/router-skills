@@ -1,56 +1,95 @@
 import { chmodSync } from "node:fs"
 import { HOME, backup, readConfig, writeJSON, writeText, ensureDir, type Action } from "../util.ts"
-import { HOOK_MJS } from "../templates.ts"
-import { claudeHooksDir, claudeHookPath, claudeSettings } from "../paths.ts"
+import { GATE_LIB_MJS, GATE_EVAL_MJS, GATE_TRACK_MJS, GATE_STOP_MJS } from "../templates.ts"
+import {
+  claudeHooksDir,
+  claudeGateLib,
+  claudeGateEval,
+  claudeGateTrack,
+  claudeGateStop,
+  claudeSettings,
+} from "../paths.ts"
 
 /**
- * Install skill enforcement for Claude Code (cross-platform):
- *  1. Drop the Node forced-eval hook into ~/.claude/hooks/ (Node runs on Win+posix)
- *  2. Wire it into ~/.claude/settings.json under hooks.UserPromptSubmit (idempotent)
+ * Install the skill-gate for Claude Code (cross-platform):
+ *  1. Drop 4 Node files into ~/.claude/hooks/ (lib + eval + track + stop)
+ *  2. Wire 3 hook points into settings.json (idempotent, re-run safe):
+ *       UserPromptSubmit → gate-eval   (deterministic contract + auto-inject)
+ *       PostToolUse:Skill → gate-track  (records activations)
+ *       Stop             → gate-stop    (BLOCKS turn-end until required loaded)
+ * Only strict JSON is rewritten — a jsonc/unreadable settings.json is left alone.
  */
 export function installClaude(dryRun: boolean): Action[] {
   const actions: Action[] = []
   const hooksDir = claudeHooksDir(HOME)
-  const hookPath = claudeHookPath(HOME)
+  const lib = claudeGateLib(HOME)
+  const evalHook = claudeGateEval(HOME)
+  const trackHook = claudeGateTrack(HOME)
+  const stopHook = claudeGateStop(HOME)
   const settingsPath = claudeSettings(HOME)
-  const cmd = `node "${hookPath}"`
 
-  // 1. hook script (Node, absolute path → no shell ~ expansion needed on Windows)
+  // 1. hook files
   if (!dryRun) {
     ensureDir(hooksDir)
-    writeText(hookPath, HOOK_MJS)
-    try {
-      chmodSync(hookPath, 0o755)
-    } catch {
-      // chmod is a no-op / may throw on Windows — safe to ignore
+    writeText(lib, GATE_LIB_MJS)
+    writeText(evalHook, GATE_EVAL_MJS)
+    writeText(trackHook, GATE_TRACK_MJS)
+    writeText(stopHook, GATE_STOP_MJS)
+    for (const f of [evalHook, trackHook, stopHook]) {
+      try {
+        chmodSync(f, 0o755)
+      } catch {
+        // chmod is a no-op / may throw on Windows — safe to ignore
+      }
     }
   }
-  actions.push({ label: "hook script", done: !dryRun, detail: hookPath })
+  actions.push({ label: "gate hook files", done: !dryRun, detail: `${hooksDir} (lib+eval+track+stop)` })
 
-  // 2. settings.json wiring (idempotent — matches old .sh or new .mjs installs)
+  // 2. settings.json wiring — only strict JSON is safe to rewrite
   const read = readConfig<any>(settingsPath, {})
   if (read.existed && !read.strict) {
-    // Only rewrite strict JSON. A jsonc/comment-bearing or unparseable settings.json is left
-    // untouched — rewriting it would strip comments or (worse) clobber a config we misread.
     const why = read.parsed ? "not strict JSON (comments/jsonc)" : "unreadable"
-    actions.push({ label: "settings.json wiring", done: false, detail: `${why} — left untouched, wire the hook manually` })
+    actions.push({ label: "settings.json wiring", done: false, detail: `${why} — left untouched, wire the 3 hooks manually` })
     return actions
   }
   const settings = read.value
   settings.hooks ??= {}
-  settings.hooks.UserPromptSubmit ??= []
-  const already = JSON.stringify(settings.hooks.UserPromptSubmit).includes("skill-forced-eval")
+  const h = settings.hooks
+  h.UserPromptSubmit ??= []
+  h.PostToolUse ??= []
+  h.Stop ??= []
 
-  if (already) {
-    actions.push({ label: "settings.json wiring", done: true, detail: "already wired (skipped)" })
-  } else if (dryRun) {
-    actions.push({ label: "settings.json wiring", done: false, detail: "would add UserPromptSubmit hook" })
-  } else {
-    const bak = backup(settingsPath)
-    settings.hooks.UserPromptSubmit.unshift({ hooks: [{ type: "command", command: cmd }] })
-    writeJSON(settingsPath, settings)
-    actions.push({ label: "settings.json wiring", done: true, detail: bak ? `wired (backup: ${bak})` : "wired (new file)" })
+  const wasWired =
+    JSON.stringify(h.UserPromptSubmit).includes("skill-gate-eval") ||
+    JSON.stringify(h.Stop).includes("skill-gate-stop")
+
+  if (dryRun) {
+    actions.push({
+      label: "settings.json wiring",
+      done: false,
+      detail: "would wire UserPromptSubmit(eval) + PostToolUse:Skill(track) + Stop(stop)",
+    })
+    return actions
   }
+
+  // Strip any prior forced-eval / gate wiring so re-runs stay clean (idempotent).
+  const strip = (arr: any[], needle: string) => arr.filter((g) => !JSON.stringify(g).includes(needle))
+  const bak = backup(settingsPath)
+  h.UserPromptSubmit = strip(h.UserPromptSubmit, "skill-forced-eval")
+  h.UserPromptSubmit = strip(h.UserPromptSubmit, "skill-gate-eval")
+  h.PostToolUse = strip(h.PostToolUse, "skill-gate-track")
+  h.Stop = strip(h.Stop, "skill-gate-stop")
+
+  h.UserPromptSubmit.unshift({ hooks: [{ type: "command", command: `node "${evalHook}"` }] })
+  h.PostToolUse.push({ matcher: "Skill", hooks: [{ type: "command", command: `node "${trackHook}"` }] })
+  h.Stop.unshift({ hooks: [{ type: "command", command: `node "${stopHook}"` }] })
+
+  writeJSON(settingsPath, settings)
+  actions.push({
+    label: "settings.json wiring",
+    done: true,
+    detail: (wasWired ? "re-wired" : "wired") + (bak ? ` (backup: ${bak})` : " (new file)"),
+  })
 
   return actions
 }

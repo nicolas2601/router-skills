@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { HOME, readConfig } from "./util.ts"
 import {
-  claudeHookPath,
+  claudeGateEval,
+  claudeGateStop,
   claudeSettings,
   claudeSkillsDir,
   claudeAgentsDir,
@@ -27,8 +28,10 @@ export function verify(): Check[] {
   const checks: Check[] = []
 
   // ── Claude Code ────────────────────────────────────────────────
-  const hook = claudeHookPath(HOME)
-  checks.push({ name: "claude: hook script", ok: existsSync(hook), detail: hook })
+  const evalHook = claudeGateEval(HOME)
+  const stopHook = claudeGateStop(HOME)
+  const gateFiles = existsSync(evalHook) && existsSync(stopHook)
+  checks.push({ name: "claude: gate hooks", ok: gateFiles, detail: gateFiles ? "eval + track + stop present" : `missing (${evalHook})` })
 
   const settings = readConfig<any>(claudeSettings(HOME), {})
   if (!settings.existed) {
@@ -36,8 +39,16 @@ export function verify(): Check[] {
   } else if (!settings.parsed) {
     checks.push({ name: "claude: settings wiring", ok: false, detail: "settings.json unreadable" })
   } else {
-    const wired = JSON.stringify(settings.value?.hooks?.UserPromptSubmit ?? []).includes("skill-forced-eval")
-    checks.push({ name: "claude: settings wiring", ok: wired, detail: wired ? "UserPromptSubmit hook present" : "not wired" })
+    const hooks = settings.value?.hooks ?? {}
+    const evalWired = JSON.stringify(hooks.UserPromptSubmit ?? []).includes("skill-gate-eval")
+    const stopWired = JSON.stringify(hooks.Stop ?? []).includes("skill-gate-stop")
+    const trackWired = JSON.stringify(hooks.PostToolUse ?? []).includes("skill-gate-track")
+    const wired = evalWired && stopWired && trackWired
+    checks.push({
+      name: "claude: settings wiring",
+      ok: wired,
+      detail: wired ? "eval + track + stop wired" : `eval=${evalWired} track=${trackWired} stop=${stopWired}`,
+    })
   }
 
   const cSkills = count(claudeSkillsDir(HOME))

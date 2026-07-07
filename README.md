@@ -12,10 +12,25 @@ it never overwrites a config it can't safely parse.
 
 ## Why
 
-Both harnesses ship skills but reach for them inconsistently (or never). router-skills
-installs the proven *forced-eval* pattern: before each response the agent must scan the
-catalog, pick the **most specific** skills, and activate them before acting — instead of
-defaulting to the same few or skipping straight to code.
+Both harnesses ship skills but reach for them inconsistently (or never). A plain text
+nudge is only advice — the model reads it, announces a skill or two, then skips straight
+to code. router-skills installs a **real gate** that enforces skill use instead of merely
+suggesting it.
+
+### How the gate works
+
+A deterministic scorer matches your prompt against the skill catalog and splits the result:
+
+- **REQUIRED** (strong match) — the gate **blocks** until every one is loaded. On Claude
+  Code a `Stop` hook refuses to end the turn; on opencode the first work tool
+  (`write`/`edit`/`bash`) throws until they're loaded.
+- **SUGGESTED** (complementary, uncapped) — encouraged, never blocked. If several skills
+  genuinely complement the task, all of them are surfaced — no rigid limit.
+
+Ambient/meta tokens (`claude`, `code`, `github`, a pasted URL…) are down-weighted so a link
+or meta-prompt never force-blocks on irrelevant skills. The top matches are also
+**auto-injected** (their `SKILL.md` bodies inlined) as a knowledge floor. Both hooks and the
+plugin **fail open** — a crash can never block your prompt.
 
 ## Install
 
@@ -62,8 +77,8 @@ ROUTER_SKILLS_DIR=/path/to/skills ROUTER_AGENTS_DIR=/path/to/agents ./router-ski
 
 | Target | Enforcement | Config |
 |--------|-------------|--------|
-| Claude Code | `~/.claude/hooks/skill-forced-eval.mjs` (Node hook, runs on Win + posix) | wired into `~/.claude/settings.json` |
-| opencode | `~/.config/opencode/plugins/skill-enforcer.ts` (`experimental.chat.system.transform`) **+** `skill-enforcement.md` registered in `instructions[]` | `permission.skill["*"]` and `permission.task["*"]` set to `"allow"` |
+| Claude Code | `~/.claude/hooks/skill-gate-{lib,eval,track,stop}.mjs` (Node, runs on Win + posix) | 3 hooks in `~/.claude/settings.json`: `UserPromptSubmit`→eval, `PostToolUse:Skill`→track, `Stop`→gate-block |
+| opencode | `~/.config/opencode/plugins/skill-enforcer.ts` (`chat.message` + `system.transform` + `tool.execute.before`/`after` gate) **+** `skill-enforcement.md` registered in `instructions[]` | `permission.skill["*"]` and `permission.task["*"]` set to `"allow"` |
 | Skills | links `skills/*` → `~/.claude/skills/` | opencode reads `~/.claude/skills` globally too, so both harnesses share one source |
 | Agents (Claude) | links `agents/*` → `~/.claude/agents/` | category dirs are dir-symlinks / Windows junctions; loose root `*.md` copied |
 | Agents (opencode) | **converts** each agent → `~/.config/opencode/agents/*.md` | opencode's schema differs (`mode` required, `tools` is an object not a comma-string), so raw links error — each is rewritten to a minimal valid opencode agent, and stale raw links from older installs are pruned |
@@ -142,8 +157,13 @@ bun install
 bun run typecheck   # tsc --noEmit (strict)
 bun run validate    # skill + agent pack integrity gate
 bun run test        # path + frontmatter + conversion tests
-bun run build       # compile linux + windows + macos binaries into dist/
+bun run gen         # regenerate src/templates.ts from gate/ sources
+bun run build       # regen templates, then compile linux + windows + macos binaries into dist/
 ```
+
+The hook + plugin sources live under `gate/` and are inlined into `src/templates.ts` (so the
+compiled binary needs no assets). **Edit the files in `gate/`, never `src/templates.ts`
+directly**, then run `bun run gen`.
 
 ## CI / Release
 

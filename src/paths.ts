@@ -12,6 +12,15 @@ export const claudeDir = (home: string, p: PathImpl = nodePath) => p.join(home, 
 export const claudeHooksDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "hooks")
 export const claudeHookPath = (home: string, p: PathImpl = nodePath) =>
   p.join(claudeHooksDir(home, p), "skill-forced-eval.mjs")
+// Skill-gate files (v2 enforcement): shared lib + 3 wired hooks.
+export const claudeGateLib = (home: string, p: PathImpl = nodePath) =>
+  p.join(claudeHooksDir(home, p), "skill-gate-lib.mjs")
+export const claudeGateEval = (home: string, p: PathImpl = nodePath) =>
+  p.join(claudeHooksDir(home, p), "skill-gate-eval.mjs")
+export const claudeGateTrack = (home: string, p: PathImpl = nodePath) =>
+  p.join(claudeHooksDir(home, p), "skill-gate-track.mjs")
+export const claudeGateStop = (home: string, p: PathImpl = nodePath) =>
+  p.join(claudeHooksDir(home, p), "skill-gate-stop.mjs")
 export const claudeSettings = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "settings.json")
 export const claudeSkillsDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "skills")
 export const claudeAgentsDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "agents")

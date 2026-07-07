@@ -27,8 +27,8 @@ Usage:
   router-skills --help     this
 
 What it does:
-  • Claude Code  → installs forced-eval UserPromptSubmit hook + wires settings.json
-  • opencode     → installs skill-enforcer plugin + permission.skill allow
+  • Claude Code  → installs the skill-gate (eval + track + Stop-block hooks) + wires settings.json
+  • opencode     → installs skill-enforcer plugin (gate on first work tool) + rule + permission.skill allow
   • skills       → symlinks the bundled pack into ~/.claude/skills (both harnesses read it)
   • agents       → links the bundled agent pack into ~/.claude/agents (+ opencode agents when chosen)
 `)

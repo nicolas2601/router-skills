@@ -1,9 +1,15 @@
 import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { resolve, join, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
 
-/** Repo root. util.ts lives in src/, so root is one level up. */
-export const ROOT = resolve(import.meta.dir, "..")
+/** Repo root. util.ts lives in src/, so root is one level up. Cross-runtime:
+ *  bun exposes import.meta.dir, node exposes import.meta.dirname. */
+const HERE =
+  (import.meta as any).dir ??
+  (import.meta as any).dirname ??
+  dirname(fileURLToPath(import.meta.url))
+export const ROOT = resolve(HERE, "..")
 /** Bundled skill pack. Overridable via ROUTER_SKILLS_DIR for compiled binaries. */
 export const SKILLS = process.env.ROUTER_SKILLS_DIR ?? join(ROOT, "skills")
 /** Bundled agent pack. Overridable via ROUTER_AGENTS_DIR for compiled binaries. */
