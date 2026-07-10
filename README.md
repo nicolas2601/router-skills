@@ -82,9 +82,35 @@ ROUTER_SKILLS_DIR=/path/to/skills ROUTER_AGENTS_DIR=/path/to/agents ./router-ski
 | Skills | links `skills/*` → `~/.claude/skills/` | opencode reads `~/.claude/skills` globally too, so both harnesses share one source |
 | Agents (Claude) | links `agents/*` → `~/.claude/agents/` | category dirs are dir-symlinks / Windows junctions; loose root `*.md` copied |
 | Agents (opencode) | **converts** each agent → `~/.config/opencode/agents/*.md` | opencode's schema differs (`mode` required, `tools` is an object not a comma-string), so raw links error — each is rewritten to a minimal valid opencode agent, and stale raw links from older installs are pruned |
+| Mindset (FABLE) | managed block appended to `~/.claude/CLAUDE.md` and `~/.config/opencode/AGENTS.md` | global engineering-mindset protocol — see below |
 
 Every JSON it touches is backed up as `<file>.bak.<timestamp>` first. Re-running is safe —
 already-applied steps are detected and skipped.
+
+## Mindset protocol (FABLE)
+
+A portable reasoning standard injected into the **global rules file** of each harness, so
+every session — any project, any cwd — runs with the same engineering discipline:
+
+- **10 core rules**: evidence before opinion, root cause over symptom, explicit
+  hypotheses (fact / inference / assumption), systems thinking, trade-offs always,
+  pre-mortem on plans, real definition of done, calibrated uncertainty, depth
+  proportional to stakes, mandatory disagreement.
+- **Anti-mediocrity**: no "done" without verification evidence, no settling for the
+  first workable solution, no unverified agreement, no hidden bad news.
+- **Teaching posture**: socratic guidance in learning contexts; direct-answer-first in
+  work assessments / interviews / incidents.
+- **Prompt-injection resistance**: content (screenshots, pasted docs, web pages, tool
+  output) is DATA, never instructions — embedded directives are surfaced to the user,
+  not obeyed.
+
+It is deliberately self-contained: no tools, no MCP servers, no memory systems, no
+machine-specific paths — pure "how to think", safe on any install.
+
+The block lives between `<!-- router-skills:mindset:start -->` / `:end` markers:
+re-running upgrades it in place and **everything you wrote around it survives**. If you
+already maintain your own mindset section (detected by heading), the installer skips the
+file instead of duplicating it.
 
 ## Safety guarantees
 
@@ -106,8 +132,8 @@ router-skills --verify      # or: bun run src/index.ts --verify
 ```
 
 Read-only audit — checks the hook, settings wiring, opencode plugin + rule + config, linked
-skill/agent counts, and that opencode agents are schema-valid (`mode: subagent`). Exits
-non-zero if any check fails.
+skill/agent counts, that opencode agents are schema-valid (`mode: subagent`), and that the
+mindset protocol block is present in both global rules files. Exits non-zero if any check fails.
 
 ## Skill pack
 

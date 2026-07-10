@@ -24,6 +24,8 @@ export const claudeGateStop = (home: string, p: PathImpl = nodePath) =>
 export const claudeSettings = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "settings.json")
 export const claudeSkillsDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "skills")
 export const claudeAgentsDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "agents")
+/** Global memory file — Claude Code loads it in every session, any cwd. */
+export const claudeGlobalMd = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "CLAUDE.md")
 
 export const opencodeBase = (home: string, p: PathImpl = nodePath) => p.join(home, ".config", "opencode")
 export const opencodePluginsDir = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "plugins")
@@ -33,3 +35,5 @@ export const opencodeConfig = (home: string, p: PathImpl = nodePath) => p.join(o
 export const opencodeAgentsDir = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "agents")
 export const opencodeRuleFile = (home: string, p: PathImpl = nodePath) =>
   p.join(opencodeBase(home, p), "skill-enforcement.md")
+/** Global rules file — opencode reads it in every session, any cwd. */
+export const opencodeAgentsMd = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "AGENTS.md")

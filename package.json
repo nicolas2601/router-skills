@@ -1,7 +1,7 @@
 {
   "name": "router-skills",
-  "version": "0.4.0",
-  "description": "Force Claude Code & opencode to evaluate and use Agent Skills on every turn — cross-platform provisioner",
+  "version": "0.5.0",
+  "description": "Force Claude Code & opencode to evaluate and use Agent Skills on every turn, plus a global engineering-mindset protocol — cross-platform provisioner",
   "type": "module",
   "bin": {
     "router-skills": "./src/index.ts"

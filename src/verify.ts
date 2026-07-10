@@ -6,11 +6,14 @@ import {
   claudeSettings,
   claudeSkillsDir,
   claudeAgentsDir,
+  claudeGlobalMd,
   opencodePlugin,
   opencodeConfig,
   opencodeRuleFile,
   opencodeAgentsDir,
+  opencodeAgentsMd,
 } from "./paths.ts"
+import { MINDSET_START } from "./mindset-template.ts"
 
 /** A single read-only health check. `ok:null` = not applicable (target not installed). */
 export type Check = { name: string; ok: boolean | null; detail: string }
@@ -51,6 +54,8 @@ export function verify(): Check[] {
     })
   }
 
+  checks.push(mindsetCheck("claude: mindset protocol", claudeGlobalMd(HOME)))
+
   const cSkills = count(claudeSkillsDir(HOME))
   checks.push({ name: "claude: skills linked", ok: cSkills > 0, detail: `${cSkills} in ~/.claude/skills` })
   const cAgents = count(claudeAgentsDir(HOME))
@@ -79,6 +84,8 @@ export function verify(): Check[] {
     })
   }
 
+  checks.push(mindsetCheck("opencode: mindset protocol", opencodeAgentsMd(HOME)))
+
   const oAgents = count(opencodeAgentsDir(HOME))
   checks.push({ name: "opencode: agents converted", ok: oAgents > 0, detail: `${oAgents} in ~/.config/opencode/agents` })
 
@@ -94,6 +101,20 @@ export function verify(): Check[] {
   }
 
   return checks
+}
+
+/** Mindset block present? Managed marker OR a hand-rolled custom section both count as ok. */
+function mindsetCheck(name: string, file: string): Check {
+  if (!existsSync(file)) return { name, ok: false, detail: `${file} not found — run router-skills` }
+  try {
+    const body = readFileSync(file, "utf8")
+    if (body.includes(MINDSET_START)) return { name, ok: true, detail: "managed block present" }
+    if (body.includes("CÓMO PIENSA FABLE") || body.includes("Engineering Mindset Protocol"))
+      return { name, ok: true, detail: "custom mindset section present" }
+    return { name, ok: false, detail: "no mindset block — run router-skills" }
+  } catch {
+    return { name, ok: false, detail: `${file} unreadable` }
+  }
 }
 
 function sampleOpencodeAgents(dir: string, limit: number): { total: number; valid: number } {

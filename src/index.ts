@@ -6,6 +6,7 @@ import { installClaude } from "./installers/claude.ts"
 import { installOpencode } from "./installers/opencode.ts"
 import { installSkills } from "./installers/skills.ts"
 import { installAgents } from "./installers/agents.ts"
+import { installMindset } from "./installers/mindset.ts"
 import { verify } from "./verify.ts"
 import type { Action } from "./util.ts"
 
@@ -31,6 +32,8 @@ What it does:
   • opencode     → installs skill-enforcer plugin (gate on first work tool) + rule + permission.skill allow
   • skills       → symlinks the bundled pack into ~/.claude/skills (both harnesses read it)
   • agents       → links the bundled agent pack into ~/.claude/agents (+ opencode agents when chosen)
+  • mindset      → installs the FABLE engineering-mindset protocol into the global
+                   rules of each chosen CLI (~/.claude/CLAUDE.md, ~/.config/opencode/AGENTS.md)
 `)
   process.exit(0)
 }
@@ -87,11 +90,13 @@ async function main() {
   let chosen: string[]
   let doSkills: boolean
   let doAgents: boolean
+  let doMindset: boolean
 
   if (YES) {
     chosen = present.map((t) => t.id)
     doSkills = true
     doAgents = true
+    doMindset = true
   } else {
     const sel = await multiselect({
       message: "Configure skill enforcement for:",
@@ -109,6 +114,13 @@ async function main() {
     const ag = await confirm({ message: "Also link the bundled agent pack into ~/.claude/agents (+ opencode)?", initialValue: true })
     if (isCancel(ag)) return cancel("Cancelled.")
     doAgents = ag as boolean
+
+    const mi = await confirm({
+      message: "Install the FABLE engineering-mindset protocol into global CLAUDE.md / AGENTS.md?",
+      initialValue: true,
+    })
+    if (isCancel(mi)) return cancel("Cancelled.")
+    doMindset = mi as boolean
   }
 
   // run
@@ -130,6 +142,10 @@ async function main() {
   if (doAgents) {
     s.message("Linking agents…")
     printActions("Agents", installAgents(DRY, chosen.includes("opencode")).actions)
+  }
+  if (doMindset) {
+    s.message("Installing mindset protocol…")
+    printActions("Mindset (FABLE)", installMindset(DRY, { claude: chosen.includes("claude"), opencode: chosen.includes("opencode") }))
   }
 
   s.stop(DRY ? "Dry-run complete — nothing written." : "Done.")
