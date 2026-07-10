@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { intro, outro, multiselect, confirm, isCancel, cancel, note, log, spinner } from "@clack/prompts"
+import { intro, outro, multiselect, confirm, isCancel, cancel, note, spinner } from "@clack/prompts"
 import pc from "picocolors"
 import { detectTargets, detectReportOnly } from "./detect.ts"
 import { installClaude } from "./installers/claude.ts"
@@ -8,13 +8,18 @@ import { installSkills } from "./installers/skills.ts"
 import { installAgents } from "./installers/agents.ts"
 import { installMindset } from "./installers/mindset.ts"
 import { verify } from "./verify.ts"
-import type { Action } from "./util.ts"
+import { isInteractive, type Action } from "./util.ts"
 
 const argv = new Set(process.argv.slice(2))
 const YES = argv.has("--yes") || argv.has("-y")
 const DRY = argv.has("--dry-run") || argv.has("-n")
 const HELP = argv.has("--help") || argv.has("-h")
 const VERIFY = argv.has("--verify") || argv.has("-v")
+// Piped installs (curl|bash, irm|iex) have no TTY — clack prompts hang/throw there. Any
+// non-interactive run selects every detected target with defaults instead of prompting.
+// (--verify returns before we reach the prompts; --dry-run still previews, just without
+// asking.) This makes the advertised one-liner — and `... -s -- --dry-run` — actually work.
+const AUTO = YES || !isInteractive()
 
 if (HELP) {
   console.log(`
@@ -86,13 +91,20 @@ async function main() {
     process.exit(1)
   }
 
+  if (AUTO && !YES) {
+    note(
+      "No interactive terminal detected (piped install) — configuring every detected CLI\nwith defaults. Re-run in a terminal, or with flags, to choose.",
+      "Non-interactive mode",
+    )
+  }
+
   // pick targets + skills
   let chosen: string[]
   let doSkills: boolean
   let doAgents: boolean
   let doMindset: boolean
 
-  if (YES) {
+  if (AUTO) {
     chosen = present.map((t) => t.id)
     doSkills = true
     doAgents = true
@@ -150,10 +162,42 @@ async function main() {
 
   s.stop(DRY ? "Dry-run complete — nothing written." : "Done.")
 
-  if (!DRY) {
-    log.warn(pc.yellow("Restart Claude Code and opencode sessions for hooks/plugin to load."))
+  if (DRY) {
+    outro(pc.cyan("Re-run without --dry-run to apply."))
+    return
   }
-  outro(DRY ? "Re-run without --dry-run to apply." : "router-skills: both harnesses will now evaluate skills every turn.")
+
+  // Post-install health snapshot — turn the raw checks into a one-glance summary so the
+  // user knows what actually landed without running --verify separately.
+  const checks = verify()
+  const relevant = checks.filter((c) => c.ok !== null)
+  const failed = relevant.filter((c) => c.ok === false)
+  if (failed.length === 0) {
+    note(pc.green(`✓ all ${relevant.length} health checks passed`), "Health")
+  } else {
+    note(
+      failed.map((c) => `${pc.red("✗")} ${c.name} ${pc.dim("— " + c.detail)}`).join("\n"),
+      pc.yellow(`Health — ${failed.length} of ${relevant.length} need attention`),
+    )
+  }
+
+  const restart = chosen.map((c) => (c === "claude" ? "Claude Code" : "opencode")).join(" and ")
+  note(
+    [
+      `1. Restart ${restart} so the new hooks/plugin load.`,
+      `2. Check anytime with: ${pc.cyan("router-skills --verify")}`,
+      failed.length ? `3. Re-run ${pc.cyan("router-skills")} to repair the failed checks above.` : null,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    "Next steps",
+  )
+
+  outro(
+    failed.length === 0
+      ? pc.green("Done — skill enforcement + engineering-mindset protocol are live in every session.")
+      : pc.yellow("Applied with warnings — see Health above."),
+  )
 }
 
 main().catch((e) => {

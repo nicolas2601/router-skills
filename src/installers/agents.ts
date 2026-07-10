@@ -41,6 +41,7 @@ function linkClaudeAgents(dryRun: boolean): Action {
 
   let linked = 0
   let skipped = 0
+  let failed = 0
   for (const e of entries) {
     const src = join(AGENTS, e.name)
     const dest = join(target, e.name)
@@ -54,16 +55,19 @@ function linkClaudeAgents(dryRun: boolean): Action {
         else if (e.isFile() && e.name.endsWith(".md")) writeFileSync(dest, readFileSync(src))
         else continue
       } catch {
+        // junction/copy failure (Windows perms, cross-volume) — report, don't hide.
+        failed++
         continue
       }
     }
     linked++
   }
 
+  const failedNote = failed > 0 ? `, ${failed} FAILED (check permissions)` : ""
   return {
     label: "agents → ~/.claude/agents",
-    done: !dryRun,
-    detail: `${dryRun ? "would link" : "linked"} ${linked} new, ${skipped} present`,
+    done: !dryRun && failed === 0,
+    detail: `${dryRun ? "would link" : "linked"} ${linked} new, ${skipped} present${failedNote}`,
   }
 }
 

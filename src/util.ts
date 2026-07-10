@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { resolve, join, dirname } from "node:path"
+import { resolve, join, dirname, delimiter } from "node:path"
 import { fileURLToPath } from "node:url"
 
 /** Repo root. util.ts lives in src/, so root is one level up. Cross-runtime:
@@ -98,9 +98,72 @@ export function writeText(file: string, content: string) {
   writeFileSync(file, content)
 }
 
-/** True when `cmd` resolves on PATH. */
+/**
+ * Cross-runtime PATH lookup. Uses Bun's native resolver when available, else a manual
+ * scan of process.env.PATH (with Windows PATHEXT). Never throws.
+ * `pathSep`/`extList` are injectable so Windows resolution can be unit-tested on posix.
+ */
+export function whichSync(
+  cmd: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  sep: string = delimiter,
+): string | null {
+  const g = globalThis as any
+  if (g.Bun?.which) {
+    try {
+      return g.Bun.which(cmd)
+    } catch {
+      /* fall through to manual scan */
+    }
+  }
+  const dirs = (env.PATH ?? env.Path ?? "").split(sep).filter(Boolean)
+  const isWin = platform === "win32"
+  const exts = isWin ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [""]
+  for (const dir of dirs) {
+    for (const ext of exts) {
+      const candidate = join(dir, cmd + (isWin && !cmd.toLowerCase().endsWith(ext.toLowerCase()) ? ext : ""))
+      try {
+        if (existsSync(candidate)) return candidate
+      } catch {
+        /* unreadable dir — skip */
+      }
+    }
+  }
+  return null
+}
+
+/** True when `cmd` resolves on PATH (cross-runtime, no Bun dependency). */
 export function onPath(cmd: string): boolean {
-  return Bun.which(cmd) !== null
+  return whichSync(cmd) !== null
+}
+
+/**
+ * Pure runner picker for the Claude Code hooks (`.mjs`). The hooks run under whichever
+ * JS runtime the wired command names, so we must name one that actually exists on the
+ * user's PATH. Prefer `node` (ubiquitous, fast startup); fall back to `bun` (guaranteed
+ * present because the bootstrap installs it). Never emit a runner that isn't installed —
+ * that is exactly the Windows failure where hooks silently no-op.
+ */
+export function pickRunner(hasNode: boolean, hasBun: boolean): "node" | "bun" {
+  if (hasNode) return "node"
+  if (hasBun) return "bun"
+  return "node" // nothing detected: node is the safest default to name (see install warning)
+}
+
+/** Resolve the runtime that should execute the hooks on THIS machine. */
+export function hookRunner(): "node" | "bun" {
+  return pickRunner(onPath("node"), onPath("bun"))
+}
+
+/** Shell command that runs a hook script with the best available runtime. */
+export function hookCommand(scriptPath: string): string {
+  return `${hookRunner()} "${scriptPath}"`
+}
+
+/** True only when both stdin and stdout are interactive TTYs — clack prompts need this. */
+export function isInteractive(): boolean {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY)
 }
 
 export type Action = { label: string; done: boolean; detail?: string }

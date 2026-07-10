@@ -49,6 +49,7 @@ export function installSkills(dryRun: boolean): { actions: Action[]; linked: num
 
   let linked = 0
   let skipped = 0
+  let failed = 0
   if (!dryRun) ensureDir(target)
 
   for (const name of names) {
@@ -61,6 +62,9 @@ export function installSkills(dryRun: boolean): { actions: Action[]; linked: num
       try {
         symlinkSync(join(SKILLS, name), dest, linkType)
       } catch {
+        // On Windows a junction can fail (locked dir, cross-volume, AV) — surface it
+        // instead of silently shorting the count, so the user knows enforcement is partial.
+        failed++
         continue
       }
     }
@@ -68,10 +72,11 @@ export function installSkills(dryRun: boolean): { actions: Action[]; linked: num
   }
 
   const invalidNote = invalid > 0 ? `, ${invalid} invalid skipped` : ""
+  const failedNote = failed > 0 ? `, ${failed} FAILED to link (check permissions)` : ""
   actions.push({
     label: "bundled skills",
-    done: !dryRun,
-    detail: `${dryRun ? "would link" : "linked"} ${dryRun ? names.length - skipped : linked} new, ${skipped} present (of ${names.length})${invalidNote} via ${linkType}`,
+    done: !dryRun && failed === 0,
+    detail: `${dryRun ? "would link" : "linked"} ${dryRun ? names.length - skipped : linked} new, ${skipped} present (of ${names.length})${invalidNote}${failedNote} via ${linkType}`,
   })
   return { actions, linked, skipped }
 }

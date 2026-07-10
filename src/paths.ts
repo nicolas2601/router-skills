@@ -27,7 +27,17 @@ export const claudeAgentsDir = (home: string, p: PathImpl = nodePath) => p.join(
 /** Global memory file — Claude Code loads it in every session, any cwd. */
 export const claudeGlobalMd = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "CLAUDE.md")
 
-export const opencodeBase = (home: string, p: PathImpl = nodePath) => p.join(home, ".config", "opencode")
+/**
+ * opencode's global config dir. Mirrors opencode's own resolution
+ * (`packages/core/src/global.ts` → xdg-basedir): `$XDG_CONFIG_HOME/opencode`, else
+ * `~/.config/opencode` on EVERY OS (xdg-basedir does not use %APPDATA% on Windows).
+ * Honoring XDG_CONFIG_HOME is required — without it we'd write to the wrong dir whenever
+ * the user (or their shell) sets it. `env` is injectable for tests.
+ */
+export const opencodeBase = (home: string, p: PathImpl = nodePath, env: Record<string, string | undefined> = process.env) => {
+  const xdg = env.XDG_CONFIG_HOME
+  return xdg ? p.join(xdg, "opencode") : p.join(home, ".config", "opencode")
+}
 export const opencodePluginsDir = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "plugins")
 export const opencodePlugin = (home: string, p: PathImpl = nodePath) =>
   p.join(opencodePluginsDir(home, p), "skill-enforcer.ts")

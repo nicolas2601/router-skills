@@ -1,5 +1,5 @@
 import { chmodSync } from "node:fs"
-import { HOME, backup, readConfig, writeJSON, writeText, ensureDir, type Action } from "../util.ts"
+import { HOME, backup, readConfig, writeJSON, writeText, ensureDir, hookCommand, onPath, type Action } from "../util.ts"
 import { GATE_LIB_MJS, GATE_EVAL_MJS, GATE_TRACK_MJS, GATE_STOP_MJS } from "../templates.ts"
 import {
   claudeHooksDir,
@@ -45,6 +45,16 @@ export function installClaude(dryRun: boolean): Action[] {
   }
   actions.push({ label: "gate hook files", done: !dryRun, detail: `${hooksDir} (lib+eval+track+stop)` })
 
+  // The hooks are named to run with a concrete runtime; if neither node nor bun is on
+  // PATH the wired command would silently no-op (the classic Windows failure).
+  if (!onPath("node") && !onPath("bun")) {
+    actions.push({
+      label: "runtime check",
+      done: false,
+      detail: "neither node nor bun found on PATH — hooks will not run until one is installed",
+    })
+  }
+
   // 2. settings.json wiring — only strict JSON is safe to rewrite
   const read = readConfig<any>(settingsPath, {})
   if (read.existed && !read.strict) {
@@ -80,9 +90,9 @@ export function installClaude(dryRun: boolean): Action[] {
   h.PostToolUse = strip(h.PostToolUse, "skill-gate-track")
   h.Stop = strip(h.Stop, "skill-gate-stop")
 
-  h.UserPromptSubmit.unshift({ hooks: [{ type: "command", command: `node "${evalHook}"` }] })
-  h.PostToolUse.push({ matcher: "Skill", hooks: [{ type: "command", command: `node "${trackHook}"` }] })
-  h.Stop.unshift({ hooks: [{ type: "command", command: `node "${stopHook}"` }] })
+  h.UserPromptSubmit.unshift({ hooks: [{ type: "command", command: hookCommand(evalHook) }] })
+  h.PostToolUse.push({ matcher: "Skill", hooks: [{ type: "command", command: hookCommand(trackHook) }] })
+  h.Stop.unshift({ hooks: [{ type: "command", command: hookCommand(stopHook) }] })
 
   writeJSON(settingsPath, settings)
   actions.push({
