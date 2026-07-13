@@ -34,16 +34,25 @@ export const claudeGlobalMd = (home: string, p: PathImpl = nodePath) => p.join(c
  * Honoring XDG_CONFIG_HOME is required — without it we'd write to the wrong dir whenever
  * the user (or their shell) sets it. `env` is injectable for tests.
  */
-export const opencodeBase = (home: string, p: PathImpl = nodePath, env: Record<string, string | undefined> = process.env) => {
+type Env = Record<string, string | undefined>
+
+export const opencodeBase = (home: string, p: PathImpl = nodePath, env: Env = process.env) => {
   const xdg = env.XDG_CONFIG_HOME
   return xdg ? p.join(xdg, "opencode") : p.join(home, ".config", "opencode")
 }
-export const opencodePluginsDir = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "plugins")
-export const opencodePlugin = (home: string, p: PathImpl = nodePath) =>
-  p.join(opencodePluginsDir(home, p), "skill-enforcer.ts")
-export const opencodeConfig = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "opencode.json")
-export const opencodeAgentsDir = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "agents")
-export const opencodeRuleFile = (home: string, p: PathImpl = nodePath) =>
-  p.join(opencodeBase(home, p), "skill-enforcement.md")
+// Every derived path must forward `env` to opencodeBase. If it falls back to the
+// default `process.env`, an ambient XDG_CONFIG_HOME silently overrides the caller's
+// `home` — which is exactly what made these paths untestable on CI runners.
+export const opencodePluginsDir = (home: string, p: PathImpl = nodePath, env: Env = process.env) =>
+  p.join(opencodeBase(home, p, env), "plugins")
+export const opencodePlugin = (home: string, p: PathImpl = nodePath, env: Env = process.env) =>
+  p.join(opencodePluginsDir(home, p, env), "skill-enforcer.ts")
+export const opencodeConfig = (home: string, p: PathImpl = nodePath, env: Env = process.env) =>
+  p.join(opencodeBase(home, p, env), "opencode.json")
+export const opencodeAgentsDir = (home: string, p: PathImpl = nodePath, env: Env = process.env) =>
+  p.join(opencodeBase(home, p, env), "agents")
+export const opencodeRuleFile = (home: string, p: PathImpl = nodePath, env: Env = process.env) =>
+  p.join(opencodeBase(home, p, env), "skill-enforcement.md")
 /** Global rules file — opencode reads it in every session, any cwd. */
-export const opencodeAgentsMd = (home: string, p: PathImpl = nodePath) => p.join(opencodeBase(home, p), "AGENTS.md")
+export const opencodeAgentsMd = (home: string, p: PathImpl = nodePath, env: Env = process.env) =>
+  p.join(opencodeBase(home, p, env), "AGENTS.md")
