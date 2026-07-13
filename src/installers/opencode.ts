@@ -2,6 +2,40 @@ import { HOME, backup, readConfig, writeJSON, writeText, ensureDir, type Action 
 import { PLUGIN_TS, SKILL_RULE_MD } from "../templates.ts"
 import { opencodePluginsDir, opencodePlugin, opencodeConfig, opencodeRuleFile } from "../paths.ts"
 
+/** instructions[] entry — path relative to ~/.config/opencode, where opencode.json lives. */
+export const RULE_REF = "skill-enforcement.md"
+
+export type OpencodePlan = {
+  hasRule: boolean
+  needSkill: boolean
+  needTask: boolean
+  fullyConfigured: boolean
+}
+
+/**
+ * Pure decision step for opencode.json: what is already in place, what is missing.
+ * Extracted from the writer so it can be unit-tested — the inverted `fullyConfigured`
+ * check silently skipped writing instructions[] and nothing caught it.
+ */
+export function planOpencodeConfig(cfg: any): OpencodePlan {
+  const instructions = Array.isArray(cfg?.instructions) ? cfg.instructions : []
+  const hasRule = instructions.includes(RULE_REF)
+
+  const permission = cfg?.permission ?? {}
+
+  // permission.skill["*"] = "allow" → let the harness actually load skills.
+  const curSkill = permission.skill
+  const needSkill = !curSkill || curSkill["*"] !== "allow"
+
+  // permission.task["*"] = "allow" → let primary agents auto-delegate to the converted
+  // subagents via the Task tool. Only fill a MISSING default: never override an explicit
+  // "*" the user already set (e.g. a deny), and keep any per-glob rules they added.
+  const curTask = permission.task
+  const needTask = curTask === undefined || (typeof curTask === "object" && curTask["*"] === undefined)
+
+  return { hasRule, needSkill, needTask, fullyConfigured: hasRule && !needSkill && !needTask }
+}
+
 /**
  * Install skill enforcement for opencode (cross-platform):
  *  1. Drop the skill-enforcer plugin into ~/.config/opencode/plugins/ (auto-loaded)
@@ -38,24 +72,14 @@ export function installOpencode(dryRun: boolean): Action[] {
   }
   const cfg = read.value
 
-  // instructions[] — path relative to ~/.config/opencode (where opencode.json lives)
-  const RULE_REF = "skill-enforcement.md"
+  const { hasRule, needSkill, needTask, fullyConfigured } = planOpencodeConfig(cfg)
+
   cfg.instructions = Array.isArray(cfg.instructions) ? cfg.instructions : []
-  const hasRule = cfg.instructions.includes(RULE_REF)
-
   cfg.permission ??= {}
-
-  // permission.skill["*"] = "allow"  → let both harnesses actually load skills
   const curSkill = cfg.permission.skill
-  const needSkill = !curSkill || curSkill["*"] !== "allow"
-
-  // permission.task["*"] = "allow"  → let primary agents auto-delegate to the converted
-  // subagents via the Task tool. Only fill a MISSING default: never override an explicit
-  // "*" the user already set (e.g. a deny), and keep any per-glob rules they added.
   const curTask = cfg.permission.task
-  const needTask = curTask === undefined || (typeof curTask === "object" && curTask["*"] === undefined)
 
-  if (!hasRule && !needSkill && !needTask) {
+  if (fullyConfigured) {
     actions.push({ label: "opencode.json", done: true, detail: "instructions + permissions already set (skipped)" })
   } else if (dryRun) {
     const parts = [
