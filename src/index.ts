@@ -7,6 +7,7 @@ import { installOpencode } from "./installers/opencode.ts"
 import { installSkills } from "./installers/skills.ts"
 import { installAgents } from "./installers/agents.ts"
 import { installMindset } from "./installers/mindset.ts"
+import { installTokens } from "./installers/tokens.ts"
 import { verify } from "./verify.ts"
 import { isInteractive, type Action } from "./util.ts"
 
@@ -159,6 +160,9 @@ async function main() {
     s.message("Installing mindset protocol…")
     printActions("Mindset (FABLE)", installMindset(DRY, { claude: chosen.includes("claude"), opencode: chosen.includes("opencode") }))
   }
+
+  s.message("Applying token-cost settings…")
+  printActions("Token cost", installTokens(DRY))
 
   // W1: the index pre-build runs LAST, AFTER installSkills/installAgents have actually
   // populated ~/.claude/skills and ~/.claude/agents. Run before them (where it used to
