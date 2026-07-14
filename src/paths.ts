@@ -50,6 +50,9 @@ export const routerStateDir = (home: string, p: PathImpl = nodePath) => p.join(r
 export const claudeCoreDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "core")
 export const claudeRouterCore = (home: string, p: PathImpl = nodePath) =>
   p.join(claudeCoreDir(home, p), "router-core.mjs")
+/** router-core imports `./lexicon.mjs`, so it must land beside it in core/ — not in hooks/. */
+export const claudeLexicon = (home: string, p: PathImpl = nodePath) =>
+  p.join(claudeCoreDir(home, p), "lexicon.mjs")
 export const claudeSkillRouter = (home: string, p: PathImpl = nodePath) =>
   p.join(claudeHooksDir(home, p), "skill-router.mjs")
 export const claudeUsageTracker = (home: string, p: PathImpl = nodePath) =>

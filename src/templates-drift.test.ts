@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs"
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, statSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join, dirname } from "node:path"
@@ -127,17 +127,13 @@ test("gen: a CRLF checkout of the gate/ sources produces byte-identical template
   const lfRoot = mkdtempSync(join(tmpdir(), "skillforge-gen-lf-"))
   const crlfRoot = mkdtempSync(join(tmpdir(), "skillforge-gen-crlf-"))
   try {
-    const gateFiles = [
-      "gate/core/router-core.mjs",
-      "gate/claude/skill-gate-lib.mjs",
-      "gate/claude/skill-gate-eval.mjs",
-      "gate/claude/skill-gate-track.mjs",
-      "gate/claude/skill-gate-stop.mjs",
-      "gate/claude/skill-router.mjs",
-      "gate/claude/skill-usage-tracker.mjs",
-      "gate/opencode/skill-enforcer.template.ts",
-      "gate/opencode/skill-enforcement.md",
-    ]
+    // Derived from disk, NOT hardcoded. A hardcoded list silently stops covering any file
+    // added to gate/ later — which is exactly what happened when lexicon.mjs arrived and
+    // this test twinned a tree that was missing it.
+    const gateFiles = readdirSync(join(ROOT, "gate"), { recursive: true, encoding: "utf8" })
+      .map((rel) => join("gate", rel))
+      .filter((rel) => statSync(join(ROOT, rel)).isFile())
+    expect(gateFiles.length).toBeGreaterThan(0)
     for (const rel of gateFiles) {
       // Read the REAL committed source (LF, verified — see FAILURE 1 diagnosis) and twin
       // it into both scratch trees, so any embedded '\n' in the fixture (not just line

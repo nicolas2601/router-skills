@@ -2,8 +2,8 @@ import { test, expect } from "bun:test"
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { ROUTER_CORE_MJS, GATE_LIB_MJS, SKILL_ROUTER_MJS, USAGE_TRACKER_MJS } from "../templates.ts"
-import { claudeRouterCore, claudeGateLib, claudeSkillRouter, claudeUsageTracker } from "../paths.ts"
+import { ROUTER_CORE_MJS, LEXICON_MJS, GATE_LIB_MJS, SKILL_ROUTER_MJS, USAGE_TRACKER_MJS } from "../templates.ts"
+import { claudeRouterCore, claudeLexicon, claudeGateLib, claudeSkillRouter, claudeUsageTracker } from "../paths.ts"
 
 /**
  * The gap that shipped a broken router.
@@ -22,6 +22,9 @@ function installToTempHome() {
   const home = mkdtempSync(path.join(tmpdir(), "skillforge-hooks-"))
   for (const [file, body] of [
     [claudeRouterCore(home), ROUTER_CORE_MJS],
+    // router-core imports ./lexicon.mjs. Forget to install it and every hook dies with
+    // ERR_MODULE_NOT_FOUND again — the exact bug this file exists to prevent.
+    [claudeLexicon(home), LEXICON_MJS],
     [claudeGateLib(home), GATE_LIB_MJS],
     [claudeSkillRouter(home), SKILL_ROUTER_MJS],
     [claudeUsageTracker(home), USAGE_TRACKER_MJS],
