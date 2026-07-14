@@ -41,6 +41,7 @@ export function normalizeEol(src) {
 const read = (p, root = ROOT) => normalizeEol(readFileSync(join(root, p), "utf8"));
 
 const ROUTER_CORE_SRC = "gate/core/router-core.mjs";
+const LEXICON_SRC = "gate/core/lexicon.mjs";
 const PLUGIN_SHELL_SRC = "gate/opencode/skill-enforcer.template.ts";
 
 /**
@@ -75,7 +76,19 @@ export function composePluginTs(root = ROOT) {
     throw new Error(`${PLUGIN_SHELL_SRC}: must not import router-core — it is inlined at generate time.`)
   }
 
-  return `${deExport(core)}\n\n${shell}`;
+  // The opencode plugin is ONE flat file, so router-core's `./lexicon.mjs` import cannot
+  // survive inlining — it would resolve against the plugins dir and blow up at load. Inline
+  // the lexicon ahead of the core and drop the import line.
+  const lexicon = read(LEXICON_SRC, root);
+  const coreInlined = deExport(core).replace(/^import\s[^;\n]*\.\/lexicon\.mjs["'];?\s*$/gm, "");
+
+  if (/\bfrom\s+["']\.\/lexicon\.mjs["']/.test(coreInlined)) {
+    throw new Error(
+      `${ROUTER_CORE_SRC}: a ./lexicon.mjs import survived inlining — the plugin would fail to load.`,
+    )
+  }
+
+  return `${deExport(lexicon)}\n\n${coreInlined}\n\n${shell}`;
 }
 
 /** Build the `{ NAME: () => content }` map for a given root. Lazy — building the map
@@ -83,6 +96,7 @@ export function composePluginTs(root = ROOT) {
 function buildConsts(root) {
   return {
     ROUTER_CORE_MJS: () => read("gate/core/router-core.mjs", root),
+    LEXICON_MJS: () => read("gate/core/lexicon.mjs", root),
     GATE_LIB_MJS: () => read("gate/claude/skill-gate-lib.mjs", root),
     GATE_EVAL_MJS: () => read("gate/claude/skill-gate-eval.mjs", root),
     GATE_TRACK_MJS: () => read("gate/claude/skill-gate-track.mjs", root),

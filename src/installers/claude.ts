@@ -6,6 +6,7 @@ import {
   GATE_TRACK_MJS,
   GATE_STOP_MJS,
   ROUTER_CORE_MJS,
+  LEXICON_MJS,
   SKILL_ROUTER_MJS,
   USAGE_TRACKER_MJS,
 } from "../templates.ts"
@@ -17,6 +18,7 @@ import {
   claudeGateStop,
   claudeRouterCore,
   claudeCoreDir,
+  claudeLexicon,
   claudeSkillRouter,
   claudeUsageTracker,
   claudeSettings,
@@ -146,6 +148,7 @@ export function installClaude(dryRun: boolean): Action[] {
   const trackHook = claudeGateTrack(HOME)
   const stopHook = claudeGateStop(HOME)
   const core = claudeRouterCore(HOME)
+  const lexicon = claudeLexicon(HOME)
   const routerHook = claudeSkillRouter(HOME)
   const trackerHook = claudeUsageTracker(HOME)
   const settingsPath = claudeSettings(HOME)
@@ -158,6 +161,7 @@ export function installClaude(dryRun: boolean): Action[] {
     // to a directory that did not exist, and every hook died on every prompt.
     ensureDir(claudeCoreDir(HOME))
     writeText(core, ROUTER_CORE_MJS)
+    writeText(lexicon, LEXICON_MJS)
     writeText(lib, GATE_LIB_MJS)
     writeText(evalHook, GATE_EVAL_MJS)
     writeText(trackHook, GATE_TRACK_MJS)

@@ -38,6 +38,34 @@ import { homedir as nodeHomedir } from "node:os";
 import nodePath from "node:path";
 import { spawnSync as nodeSpawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { ES_EN, normalizeEs, singularizeEs } from "./lexicon.mjs";
+
+/**
+ * Add the English terms a Spanish token stands for, so the prompt and the (English) skill
+ * descriptions finally share vocabulary. Original tokens are always kept, so an English
+ * prompt scores exactly as it did before — the lexicon can only add signal, never remove it.
+ *
+ * Unknown words pass through untouched. The router never invents a match it cannot justify
+ * from the user's own words.
+ */
+export function expandQuery(tokens) {
+  const out = [];
+  const seen = new Set();
+  const push = (t) => {
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+    }
+  };
+
+  for (const raw of tokens) {
+    push(raw);
+    const norm = normalizeEs(raw);
+    const hit = ES_EN[norm] || ES_EN[singularizeEs(norm)];
+    if (hit) for (const en of hit) push(en);
+  }
+  return out;
+}
 
 /**
  * @typedef {object} FsLike   subset actually used — a plain object literal satisfies it
@@ -231,7 +259,9 @@ export function countWord(haystack, term, cap = Infinity) {
 export function scoreRouter(prompt, index, _deps) {
   // K5: tokenize with the ROUTER's own stopword list (skill-router.sh:138), NOT the
   // gate's — see the ROUTER_STOPWORDS doc comment above.
-  const filtered = tokenize(prompt, ROUTER_STOPWORDS);
+  // Expand Spanish terms into the English vocabulary the skill descriptions are written
+  // in. Without this the prompt and the index share no words and noise wins outright.
+  const filtered = expandQuery(tokenize(prompt, ROUTER_STOPWORDS));
   if (filtered.length === 0) return [];
   const bg = bigrams(filtered);
 
