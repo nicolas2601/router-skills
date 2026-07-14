@@ -1,9 +1,10 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { HOME, readConfig } from "./util.ts"
 import {
   claudeGateEval,
   claudeGateStop,
   claudeSettings,
+  skillsIndexPath,
   claudeSkillsDir,
   claudeAgentsDir,
   claudeGlobalMd,
@@ -17,6 +18,67 @@ import { MINDSET_START } from "./mindset-template.ts"
 
 /** A single read-only health check. `ok:null` = not applicable (target not installed). */
 export type Check = { name: string; ok: boolean | null; detail: string }
+
+/**
+ * PURE. The router half of the Claude wiring: `skill-router` on UserPromptSubmit AND
+ * `skill-usage-tracker` on PostToolUse. Either one missing means the router is only
+ * half-installed — suggestions without use/ignore accounting, or accounting with nothing
+ * to account for. Mirrors the existing inline `evalWired`/`stopWired` pattern below.
+ */
+export function routerWiringCheck(hooks: Record<string, any>): { ok: boolean; detail: string } {
+  const routerWired = JSON.stringify(hooks?.UserPromptSubmit ?? []).includes("skill-router")
+  const trackerWired = JSON.stringify(hooks?.PostToolUse ?? []).includes("skill-usage-tracker")
+  const ok = routerWired && trackerWired
+  return {
+    ok,
+    detail: ok ? "skill-router + skill-usage-tracker wired" : `router=${routerWired} tracker=${trackerWired}`,
+  }
+}
+
+/** The slice of `node:fs` `indexHealthCheck` needs — injectable so the check is hermetic. */
+type MinimalFs = {
+  existsSync: (p: string) => boolean
+  readFileSync: (p: string, enc: string) => string
+  statSync: (p: string) => { mtimeMs: number }
+}
+
+/**
+ * A 0-row index is THE silent-no-op bug this whole change exists to kill: every hook runs,
+ * exits 0, prints nothing useful, and the router is inert forever. It must be a VISIBLE,
+ * reportable failure — never a quiet `ok:true`. `now` is injectable so age is assertable.
+ */
+export function indexHealthCheck(
+  idxPath: string,
+  fs: MinimalFs,
+  now: () => number = Date.now,
+): { ok: boolean; rows: number; ageMs: number; detail: string } {
+  let exists = false
+  try {
+    exists = fs.existsSync(idxPath)
+  } catch {
+    exists = false
+  }
+  if (!exists) {
+    return { ok: false, rows: 0, ageMs: 0, detail: `${idxPath} not found — the router will be silently inactive` }
+  }
+
+  let rows = 0
+  let ageMs = 0
+  try {
+    rows = fs
+      .readFileSync(idxPath, "utf8")
+      .split("\n")
+      .filter((l) => l.trim()).length
+    ageMs = now() - fs.statSync(idxPath).mtimeMs
+  } catch (e: any) {
+    return { ok: false, rows: 0, ageMs: 0, detail: `${idxPath} unreadable (${e?.message ?? String(e)})` }
+  }
+
+  if (rows === 0) {
+    return { ok: false, rows, ageMs, detail: "0 rows — the router will be silently inactive (no skills indexed)" }
+  }
+  return { ok: true, rows, ageMs, detail: `${rows} rows, ${Math.round(ageMs / 1000)}s old` }
+}
 
 const count = (dir: string): number => {
   try {
@@ -39,8 +101,10 @@ export function verify(): Check[] {
   const settings = readConfig<any>(claudeSettings(HOME), {})
   if (!settings.existed) {
     checks.push({ name: "claude: settings wiring", ok: null, detail: "settings.json not found" })
+    checks.push({ name: "claude: router wiring", ok: null, detail: "settings.json not found" })
   } else if (!settings.parsed) {
     checks.push({ name: "claude: settings wiring", ok: false, detail: "settings.json unreadable" })
+    checks.push({ name: "claude: router wiring", ok: false, detail: "settings.json unreadable" })
   } else {
     const hooks = settings.value?.hooks ?? {}
     const evalWired = JSON.stringify(hooks.UserPromptSubmit ?? []).includes("skill-gate-eval")
@@ -52,7 +116,17 @@ export function verify(): Check[] {
       ok: wired,
       detail: wired ? "eval + track + stop wired" : `eval=${evalWired} track=${trackWired} stop=${stopWired}`,
     })
+    const router = routerWiringCheck(hooks)
+    checks.push({ name: "claude: router wiring", ok: router.ok, detail: router.detail })
   }
+
+  // The index the router scores against every single turn. 0 rows = silently inert.
+  const idx = indexHealthCheck(skillsIndexPath(HOME), {
+    existsSync: (p) => existsSync(p),
+    readFileSync: (p, enc) => readFileSync(p, enc as BufferEncoding),
+    statSync: (p) => statSync(p),
+  })
+  checks.push({ name: "claude: skills index health", ok: idx.ok, detail: idx.detail })
 
   checks.push(mindsetCheck("claude: mindset protocol", claudeGlobalMd(HOME)))
 

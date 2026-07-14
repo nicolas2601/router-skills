@@ -2,7 +2,7 @@
 import { intro, outro, multiselect, confirm, isCancel, cancel, note, spinner } from "@clack/prompts"
 import pc from "picocolors"
 import { detectTargets, detectReportOnly } from "./detect.ts"
-import { installClaude } from "./installers/claude.ts"
+import { installClaude, preBuildClaudeIndex } from "./installers/claude.ts"
 import { installOpencode } from "./installers/opencode.ts"
 import { installSkills } from "./installers/skills.ts"
 import { installAgents } from "./installers/agents.ts"
@@ -158,6 +158,15 @@ async function main() {
   if (doMindset) {
     s.message("Installing mindset protocol…")
     printActions("Mindset (FABLE)", installMindset(DRY, { claude: chosen.includes("claude"), opencode: chosen.includes("opencode") }))
+  }
+
+  // W1: the index pre-build runs LAST, AFTER installSkills/installAgents have actually
+  // populated ~/.claude/skills and ~/.claude/agents. Run before them (where it used to
+  // live, inside installClaude) it always indexed an empty dir on a fresh machine — 0 rows,
+  // reported as a benign "no skills found yet". The router reads this index on every turn.
+  if (chosen.includes("claude")) {
+    s.message("Pre-building the skill/agent index…")
+    printActions("Index", preBuildClaudeIndex(DRY))
   }
 
   s.stop(DRY ? "Dry-run complete — nothing written." : "Done.")
