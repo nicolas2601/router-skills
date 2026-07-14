@@ -197,6 +197,37 @@ export function classify(scored, { hardCap = 4 } = {}) {
  * hit x3 (name compared with `-`/`_` replaced by spaces, like the bash `lname`).
  * Per-bigram (independent, additive): desc match +2, name match +2.
  */
+/**
+ * Whole-word matching.
+ *
+ * The bash original matched with grep-style substring containment. For long English
+ * tokens that is harmless; for short ones it is poison. The Spanish word "mal"
+ * ("bad") — which shows up in a great many real prompts — is a substring of
+ * "deciMAL", "norMAL", "forMAL", "aniMAL". Junk skills cleared the HARD threshold
+ * and got injected as [OBLIGATORIO], spending context on skills unrelated to the task.
+ *
+ * `\b` in JS is ASCII-only, so it would split on the accents that Spanish prompts are
+ * full of ("diseño", "animación"). The boundary is expressed with lookarounds over an
+ * explicit Latin-1/Latin-Extended-A word class instead.
+ */
+const WORD_CHAR = "[A-Za-z0-9\\u00C0-\\u024F]";
+
+function wordPattern(term, flags) {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<!${WORD_CHAR})${escaped}(?!${WORD_CHAR})`, flags);
+}
+
+export function hasWord(haystack, term) {
+  if (!term) return false;
+  return wordPattern(term, "").test(haystack);
+}
+
+export function countWord(haystack, term, cap = Infinity) {
+  if (!term) return 0;
+  const matches = haystack.match(wordPattern(term, "g"));
+  return matches ? Math.min(matches.length, cap) : 0;
+}
+
 export function scoreRouter(prompt, index, _deps) {
   // K5: tokenize with the ROUTER's own stopword list (skill-router.sh:138), NOT the
   // gate's — see the ROUTER_STOPWORDS doc comment above.
@@ -212,25 +243,16 @@ export function scoreRouter(prompt, index, _deps) {
 
     for (const t of filtered) {
       if (!t) continue;
-      // Count non-overlapping occurrences of `t` in `desc`, capped at 3 — mirrors
-      // the awk `while (sub(t,"",tmp) > 0 && c < 3) c++` loop exactly.
-      let tmp = desc;
-      let c = 0;
-      while (c < 3) {
-        const idx = tmp.indexOf(t);
-        if (idx === -1) break;
-        tmp = tmp.slice(0, idx) + tmp.slice(idx + t.length);
-        c++;
-      }
-      score += c;
-      if (lname.includes(t)) score += 3;
+      // Whole-word, capped at 3 (the awk original capped occurrences the same way).
+      score += countWord(desc, t, 3);
+      if (hasWord(lname, t)) score += 3;
     }
 
     for (const pair of bg) {
       if (!pair) continue;
       const spaced = pair.replace(/_/g, " ");
-      if (desc.includes(spaced)) score += 2;
-      if (lname.includes(spaced)) score += 2;
+      if (hasWord(desc, spaced)) score += 2;
+      if (hasWord(lname, spaced)) score += 2;
     }
 
     if (score > 0) rows.push({ name: row.name, score, insertionIndex });
