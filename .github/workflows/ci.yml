@@ -38,6 +38,9 @@ jobs:
       - name: Validate skill + agent pack
         run: bun run validate
 
+      - name: Templates drift guard (gate/ edited without `bun run gen`)
+        run: node scripts/gen-templates.mjs --check
+
       - name: Test (cross-platform paths run natively per-OS)
         run: bun run test
 
