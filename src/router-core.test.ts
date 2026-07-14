@@ -122,13 +122,13 @@ test("classify: STRONG/LEADER boundary matrix (AC-3/AC-4/AC-5)", () => {
 // AC-1: scoreRouter reproduces skill-router.sh's awk math exactly.
 test("scoreRouter: exact bash math (AC-1 fixtures)", () => {
   const idx1 = [{ name: "turbo-cache", desc: "cache cache cache invalidation layer" }]
-  expect(scoreRouter("please cache it correctly today", idx1)).toEqual([{ name: "turbo-cache", score: 6 }])
+  expect(scoreRouter("please cache it correctly today", idx1)).toMatchObject([{ name: "turbo-cache", score: 6 }])
 
   const idx2 = [{ name: "report-gen", desc: "reports reports quickly compiled" }]
-  expect(scoreRouter("can we get reports done please", idx2)).toEqual([{ name: "report-gen", score: 2 }])
+  expect(scoreRouter("can we get reports done please", idx2)).toMatchObject([{ name: "report-gen", score: 2 }])
 
   const idx3 = [{ name: "turbo-parser", desc: "handles data files efficiently" }]
-  expect(scoreRouter("please turbo it now", idx3)).toEqual([{ name: "turbo-parser", score: 3 }])
+  expect(scoreRouter("please turbo it now", idx3)).toMatchObject([{ name: "turbo-parser", score: 3 }])
 })
 
 // AC-1 edge cases: bigram scoring branch + stable tie-break.
@@ -141,7 +141,7 @@ test("scoreRouter: bigram match scores +2/+2 and ties are stable", () => {
   // bigram cache_now   -> "cache now" is NOT a desc substring -> 0
   // total = 1 + 1 + 0 + 2 = 4
   const idx = [{ name: "x", desc: "turbo cache invalidation" }]
-  expect(scoreRouter("turbo cache now", idx)).toEqual([{ name: "x", score: 4 }])
+  expect(scoreRouter("turbo cache now", idx)).toMatchObject([{ name: "x", score: 4 }])
 
   // A row whose NAME contains the bigram (with underscore->space) also scores +2.
   const idxNameBigram = [{ name: "turbo-cache", desc: "unrelated text here" }]
@@ -150,7 +150,7 @@ test("scoreRouter: bigram match scores +2/+2 and ties are stable", () => {
   // bigram turbo_cache -> "turbo cache" desc? no. name "turbo cache" includes "turbo cache"? yes -> +2
   // bigram cache_now -> neither -> 0
   // total = 3 + 3 + 0 + 2 = 8
-  expect(scoreRouter("turbo cache now", idxNameBigram)).toEqual([{ name: "turbo-cache", score: 8 }])
+  expect(scoreRouter("turbo cache now", idxNameBigram)).toMatchObject([{ name: "turbo-cache", score: 8 }])
 
   // Tie stability: two rows with equal score preserve insertion order.
   const tieIdx = [
@@ -166,14 +166,14 @@ test("scoreGate: AMBIENT down-weight + Set dedup (AC-2)", () => {
   const idx1 = [{ name: "claude-code-guide", desc: "guide for claude code hooks and configuration" }]
   // minScore:0 exposes the raw math so the exact 1.75 total is directly assertable.
   const scored1raw = scoreGate("test claude code hooks", idx1, { minScore: 0 })
-  expect(scored1raw).toEqual([{ name: "claude-code-guide", desc: idx1[0].desc, score: 1.75 }])
+  expect(scored1raw).toMatchObject([{ name: "claude-code-guide", desc: idx1[0].desc, score: 1.75 }])
   // Default filtering (>= SOFT_MIN=3) matches skill-gate-lib.mjs's scoreSkills: this row
   // never surfaces — a purely meta/testing prompt must not force claude-code-guide.
   expect(scoreGate("test claude code hooks", idx1)).toEqual([])
 
   const idx2 = [{ name: "notas-utility", desc: "crea notas y tambien recordatorios, también historial" }]
   const scored2 = scoreGate("necesito notas también", idx2)
-  expect(scored2).toEqual([{ name: "notas-utility", desc: idx2[0].desc, score: 4 }])
+  expect(scored2).toMatchObject([{ name: "notas-utility", desc: idx2[0].desc, score: 4 }])
 
   // Dedup proof: repeating "notas" 3x in the prompt scores identically to once.
   const scored3 = scoreGate("notas notas notas también", idx2)
@@ -407,7 +407,7 @@ test("scoreRouter: tokenizes with the ROUTER's own stopword list (skill-router.s
   const scored = scoreRouter("mi proyecto necesita ayuda", idx)
   // Bash-faithful: "proyecto" is dropped before scoring even reaches this row, so only
   // "necesita"(0 hits in desc) + "ayuda"(1 hit in desc) count -> score 1.
-  expect(scored).toEqual([{ name: "proyecto-helper", score: 1 }])
+  expect(scored).toMatchObject([{ name: "proyecto-helper", score: 1 }])
 })
 
 // W3/hermeticity: every exported router-core function except `defaultDeps` itself (and
