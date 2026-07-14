@@ -1,0 +1,44 @@
+# Force LF line endings on checkout for all detected text files, on every OS. Without
+# this, a Windows runner (core.autocrlf=true by default) checks out the gate/**
+# `.mjs`/`.ts` sources with CRLF -> `scripts/gen-templates.mjs` embeds them verbatim ->
+# `computeTemplates()` byte-diverges from the LF `src/templates.ts` committed on Linux/
+# macOS -> `gen --check` (correctly) reports STALE even though nothing under gate/
+# actually changed. This is layer 1 (the checkout itself never introduces CRLF); layer 2
+# is `scripts/gen-templates.mjs` normalising \r\n -> \n at read time regardless of how the
+# file landed on disk — belt and suspenders, neither relies on the other alone.
+* text=auto eol=lf
+
+# Explicit overrides for the extensions most load-bearing for this fix (redundant with
+# `text=auto` for these but keeps the guarantee explicit and independent of git's content
+# sniffing heuristic).
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+
+# Real binaries — never text-normalised, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.bmp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.tgz binary
+
+# Exact-byte-sensitive fixtures — must never be line-ending-normalised (e.g. SWE-bench
+# diffs vendored under skills/loki-mode/benchmarks/, sensitive to their own literal bytes).
+*.patch -text

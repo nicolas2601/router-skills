@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs"
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join, dirname } from "node:path"
@@ -111,4 +111,51 @@ test("gen: computeTemplates() output matches the committed src/templates.ts (no 
   const computed = computeTemplates()
   const committed = readFileSync(join(ROOT, "src/templates.ts"), "utf8")
   expect(computed).toBe(committed)
+})
+
+// windows-latest CI regression: with no `.gitattributes`, a Windows runner checks the repo
+// out with `core.autocrlf=true`, so the `gate/**` sources land with CRLF line endings.
+// `computeTemplates()` JSON.stringify-embeds them verbatim, so the generated output
+// byte-diverges from the LF `src/templates.ts` committed from a Linux/macOS checkout — a
+// real drift the `gen --check` guard then (correctly) flags as stale, even though nothing
+// under gate/ actually changed. This test reproduces that exact scenario WITHOUT depending
+// on a real Windows checkout: it twins every embedded gate/ source into two scratch trees —
+// one byte-identical (LF), one with every `\n` rewritten to `\r\n` (simulating the CRLF
+// checkout) — and asserts `computeTemplates()` produces IDENTICAL output for both, proving
+// the generator is byte-stable regardless of how the repo was checked out.
+test("gen: a CRLF checkout of the gate/ sources produces byte-identical templates.ts output to its LF twin", () => {
+  const lfRoot = mkdtempSync(join(tmpdir(), "skillforge-gen-lf-"))
+  const crlfRoot = mkdtempSync(join(tmpdir(), "skillforge-gen-crlf-"))
+  try {
+    const gateFiles = [
+      "gate/core/router-core.mjs",
+      "gate/claude/skill-gate-lib.mjs",
+      "gate/claude/skill-gate-eval.mjs",
+      "gate/claude/skill-gate-track.mjs",
+      "gate/claude/skill-gate-stop.mjs",
+      "gate/claude/skill-router.mjs",
+      "gate/claude/skill-usage-tracker.mjs",
+      "gate/opencode/skill-enforcer.template.ts",
+      "gate/opencode/skill-enforcement.md",
+    ]
+    for (const rel of gateFiles) {
+      // Read the REAL committed source (LF, verified — see FAILURE 1 diagnosis) and twin
+      // it into both scratch trees, so any embedded '\n' in the fixture (not just line
+      // ends) is exercised too.
+      const src = readFileSync(join(ROOT, rel), "utf8")
+      const lfPath = join(lfRoot, rel)
+      const crlfPath = join(crlfRoot, rel)
+      mkdirSync(dirname(lfPath), { recursive: true })
+      mkdirSync(dirname(crlfPath), { recursive: true })
+      writeFileSync(lfPath, src)
+      writeFileSync(crlfPath, src.replace(/\n/g, "\r\n"))
+    }
+
+    const lfOutput = computeTemplates(lfRoot)
+    const crlfOutput = computeTemplates(crlfRoot)
+    expect(crlfOutput).toBe(lfOutput)
+  } finally {
+    rmSync(lfRoot, { recursive: true, force: true })
+    rmSync(crlfRoot, { recursive: true, force: true })
+  }
 })
