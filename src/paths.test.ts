@@ -90,8 +90,14 @@ test("posix: npx cache dir", () => {
 test("posix: router state dir", () => {
   expect(routerStateDir("/home/nico", posix)).toBe("/home/nico/.claude/.router-cache/state")
 })
-test("posix: claude router core hook path", () => {
-  expect(claudeRouterCore("/home/nico", posix)).toBe("/home/nico/.claude/hooks/router-core.mjs")
+// router-core lives in .claude/core/, NOT hooks/ — the shipped hooks import it as
+// `../core/router-core.mjs`. This test used to assert hooks/, which encoded the bug that
+// made every hook die with ERR_MODULE_NOT_FOUND on every prompt.
+test("posix: claude router core lives in core/, where the hooks import it from", () => {
+  expect(claudeRouterCore("/home/nico", posix)).toBe("/home/nico/.claude/core/router-core.mjs")
+})
+test("windows: claude router core lives in core/", () => {
+  expect(claudeRouterCore("C:\\Users\\nico", win)).toBe("C:\\Users\\nico\\.claude\\core\\router-core.mjs")
 })
 test("posix: claude skill router hook path", () => {
   expect(claudeSkillRouter("/home/nico", posix)).toBe("/home/nico/.claude/hooks/skill-router.mjs")
