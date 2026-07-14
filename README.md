@@ -57,9 +57,11 @@ You run it once; both harnesses behave better in every project afterward.
 | | Before | After router-skills |
 |---|---|---|
 | **Skill use** | occasional, habit-driven | scored per prompt, **required skills blocked until loaded** |
+| **Non-English prompts** | scored against English descriptions — mostly noise | Spanish vocabulary expanded into the terms skills actually use |
 | **Reasoning** | varies by session | consistent FABLE protocol in every session |
 | **Prompt injection** | pasted "ignore previous instructions" sometimes obeyed | content treated as data, embedded commands surfaced not obeyed |
 | **Skills/agents** | whatever you set up per-tool | one bundled pack shared by both tools |
+| **Token cost** | unbounded bash/MCP output, defaults everywhere | verified caps + compaction — without disabling skills or reasoning |
 | **Config safety** | manual edits, easy to clobber | backups + strict-JSON-only writes + idempotent re-runs |
 
 ## Requirements
@@ -124,8 +126,8 @@ ROUTER_SKILLS_DIR=/path/to/skills ROUTER_AGENTS_DIR=/path/to/agents ./router-ski
 
 ## How the skill gate works
 
-A deterministic scorer (no LLM, no network) tokenizes your prompt and matches it against
-your cached skill index, then splits the matches:
+A deterministic scorer (no LLM, no network, no API key) tokenizes your prompt and matches
+it against your cached skill index, then splits the matches:
 
 - **REQUIRED** — strong matches. The gate **blocks** until each is loaded:
   - *Claude Code*: a `Stop` hook refuses to end the turn.
@@ -139,6 +141,44 @@ or a meta-prompt never force-blocks on an irrelevant skill. The strongest matche
 
 Everything **fails open**: any hook or plugin crash is swallowed so it can never block your
 prompt or break a session.
+
+### One scorer, both tools
+
+`gate/core/router-core.mjs` is the **only** scorer in the repo. Claude Code's hooks import
+it; the opencode plugin has it **inlined at build time** by `scripts/gen-templates.mjs`.
+
+That is not a stylistic choice. There used to be a hand-copied second scorer in the plugin,
+and it had already drifted — its stopword list was missing the accented `también`, which
+silently promoted a *suggested* skill to *required* on the opencode side only. A
+`bun run gen --check` guard now fails CI if the generated plugin falls out of sync with the
+source, so a drifted copy cannot come back.
+
+### Matching is whole-word, and bilingual
+
+**Whole words, not substrings.** Substring matching looks harmless until a short token in
+your language is a substring of an unrelated English word. The Spanish `mal` ("bad") lives
+inside deci**mal**, nor**mal**, for**mal**, ani**mal** — so a prompt about animations was
+*mandating* a smart-contract decimals skill. Matching is anchored to word boundaries, with
+a Latin-1/Latin-Extended word class (JS `\b` is ASCII-only and splits on accents).
+
+**Spanish prompts are expanded into English terms.** Skill descriptions are written in
+English. A Spanish prompt shares almost no tokens with them, so noise used to win outright
+— measured on a real 1307-skill index, five out of five Spanish prompts routed to something
+unrelated (`revisar la seguridad de este endpoint` → `graphql`). `gate/core/lexicon.mjs`
+maps common development vocabulary (`seguridad`→`security`, `pruebas`→`test`,
+`consulta`→`query`, `rendimiento`→`performance`, …) so the prompt and the index finally
+share words.
+
+Original tokens are always kept, so **English prompts score exactly as they did before** —
+the lexicon can only add signal, never remove it. Unknown words pass through untouched: the
+router never invents a match it cannot justify from your own words.
+
+> **The honest limit.** This is bilingual *lexical* matching, not semantic understanding. A
+> prompt whose words appear in no description still misses. Embeddings would fix that, at
+> the price of a hard local-model dependency and 50–200 ms on the critical path of a hook
+> that runs on **every prompt** — a worse failure mode than the one it solves. If you need a
+> skill loaded unconditionally, state it as a rule in your global config; that is what rules
+> are for.
 
 ## The FABLE mindset protocol
 
@@ -170,8 +210,10 @@ alone instead of duplicating it.
 
 | Target | Files | Config edits |
 |--------|-------|--------------|
-| **Claude Code** | `~/.claude/hooks/skill-gate-{lib,eval,track,stop}.mjs` | 3 hooks in `~/.claude/settings.json`: `UserPromptSubmit`→eval, `PostToolUse:Skill`→track, `Stop`→gate-block. The hook command uses `node` or `bun`, whichever you have. |
+| **Scorer (shared)** | `~/.claude/core/router-core.mjs`, `~/.claude/core/lexicon.mjs` | —. Lives in `core/`, **not** `hooks/`: the hooks import it as `../core/router-core.mjs`, and installing it anywhere else means every hook dies with `ERR_MODULE_NOT_FOUND` on every prompt. |
+| **Claude Code** | `~/.claude/hooks/skill-gate-{lib,eval,track,stop}.mjs`, `skill-router.mjs`, `skill-usage-tracker.mjs` | hooks in `~/.claude/settings.json`: `UserPromptSubmit`→eval + router, `PostToolUse:Skill`→track, `Stop`→gate-block. The hook command uses `node` or `bun`, whichever you have. |
 | **opencode** | `~/.config/opencode/plugins/skill-enforcer.ts`, `~/.config/opencode/skill-enforcement.md` | `opencode.json`: rule added to `instructions[]`, `permission.skill["*"]` and `permission.task["*"]` set to `"allow"`. Honors `XDG_CONFIG_HOME`. |
+| **Token cost** | — | `~/.claude/settings.json` + `opencode.json` — see [Token cost settings](#token-cost-settings). |
 | **Skills** | symlink/junction `skills/*` → `~/.claude/skills/` | opencode reads `~/.claude/skills` globally too, so both tools share one source. |
 | **Agents (Claude)** | `agents/*` → `~/.claude/agents/` (dir-links / Windows junctions; loose `*.md` copied) | — |
 | **Agents (opencode)** | **converted** copies → `~/.config/opencode/agents/*.md` | opencode's schema differs (`mode` required, `tools` is an object), so each is rewritten to a schema-valid agent; stale raw links from old installs are pruned. |
@@ -180,6 +222,59 @@ alone instead of duplicating it.
 Every JSON file is backed up as `<file>.bak.<timestamp>` before it's touched. Re-running is
 safe: applied steps are detected and skipped, and the run ends with a health summary +
 next-steps.
+
+## Token cost settings
+
+The installer also writes a small set of settings that cut token **cost** without cutting
+token-funded **capability**. Every key was verified against the Claude Code bundle and the
+opencode config docs — not against blog posts.
+
+**Claude Code** (`~/.claude/settings.json`)
+
+| Key | Value | Why |
+|---|---|---|
+| `env.BASH_MAX_OUTPUT_LENGTH` | `20000` | A noisy build log or test run is one of two unbounded sources of context — it can dump tens of thousands of tokens into a single turn. |
+| `env.MAX_MCP_OUTPUT_TOKENS` | `10000` | The other one. A chatty MCP tool result defaults to a far higher cap. |
+| `env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1` | Drops telemetry and survey round-trips. |
+| `autoCompactEnabled` | `true` | Written explicitly so the intent survives a settings reset. |
+| `cleanupPeriodDays` | `20` | Bounded session-transcript retention. |
+
+**opencode** (`opencode.json`)
+
+| Key | Value | Why |
+|---|---|---|
+| `compaction.auto` | `true` | Compact the session when context fills. |
+| `compaction.prune` | `true` | Drops aged tool outputs. The biggest opencode-side win: tool results dominate a long session and old ones are almost never read again. |
+
+### What this deliberately does NOT set
+
+The cost-saving config that circulates online sets `disableBundledSkills`,
+`disableWorkflows`, `disableAllHooks`, `effortLevel: "low"` and `MAX_THINKING_TOKENS: 0`.
+
+Those do cut the bill — by disabling the reasoning and the skill system the bill is buying.
+That is not optimization, it is amputation. **A test in this repo fails if any of those keys
+ever appear in the installer's output.**
+
+### The savings that are not a setting
+
+Before you tune a single knob, measure where your tokens actually go. The fixed per-turn
+toll of your global rules file is paid on **every turn**, whether the session is two
+messages or two hundred:
+
+- A global `CLAUDE.md` that inlines a catalogue of agents **the harness already injects for
+  you** is paying twice for the same list. Removing one such catalogue cut ~2,300 tokens per
+  turn — more than every env knob above combined.
+- A memory index that lists your installed skills duplicates what the harness already puts
+  in context, and goes stale the moment you install another one.
+
+Grep your own config for anything the tool already tells the model. That is where the tokens
+are.
+
+### Never overwritten
+
+Every key is filled **only if missing**. A value you set explicitly — even a more expensive
+one — is yours and stays. That is what makes the step idempotent and safe to re-run on every
+machine.
 
 ## Command reference
 
@@ -212,6 +307,8 @@ router-skills is additive and reversible:
 1. **Restore configs** — each edited `settings.json` / `opencode.json` /
    `CLAUDE.md` / `AGENTS.md` has a `*.bak.<timestamp>` next to it; restore the latest.
 2. **Remove hooks/plugin** — delete `~/.claude/hooks/skill-gate-*.mjs`,
+   `~/.claude/hooks/skill-router.mjs`, `~/.claude/hooks/skill-usage-tracker.mjs`,
+   `~/.claude/core/` (the shared scorer + lexicon),
    `~/.config/opencode/plugins/skill-enforcer.ts`, and
    `~/.config/opencode/skill-enforcement.md`.
 3. **Unlink packs** (optional) — remove the `skills/*` and `agents/*` links from
@@ -226,6 +323,20 @@ Restart both tools afterward.
 
 **Nothing enforces after install.**
 Restart Claude Code / opencode — hooks and plugins load at session start.
+
+**`ERR_MODULE_NOT_FOUND: Cannot find module '.../.claude/core/router-core.mjs'` on every prompt.**
+The hooks import the shared scorer as `../core/router-core.mjs`, so it must live in
+`~/.claude/core/` — **not** next to them in `~/.claude/hooks/`. If you upgraded from a build
+that installed it flat, delete the stray `~/.claude/hooks/router-core.mjs` and re-run
+`router-skills`. Both `router-core.mjs` and `lexicon.mjs` must be present in `core/`.
+
+**The router suggests skills that have nothing to do with my prompt.**
+Scoring is lexical, not semantic — it matches the words you actually typed against the words
+in each `SKILL.md` description. If your prompt and the description share no vocabulary, the
+match will be poor. Spanish prompts are expanded into English terms via
+`gate/core/lexicon.mjs`; add a mapping there if a term you use often is missing. For a skill
+that must load regardless of wording, state it as a rule in your global config instead — a
+scorer is the wrong tool for an unconditional requirement.
 
 **"neither node nor bun found on PATH — hooks will not run" during install.**
 The gate hooks are `.mjs` and need a JS runtime. Install [node](https://nodejs.org) or

@@ -164,12 +164,18 @@ test("needsRebuild: mtime + empty-index boundary matrix (AC-6)", () => {
 
   // Case 1: index mtime newer than every SKILL.md -> false.
   {
-    const { fs, dirs, stats } = makeFakeFs()
+    const { fs, dirs, stats, files } = makeFakeFs()
     dirs.set(skillsDir, ["s1"])
     dirs.set(skillPath, ["SKILL.md"])
     stats.set(skillPath, { isDirectory: true, isFile: false, mtimeMs: 100, size: 0 })
     stats.set(mdPath, { isDirectory: false, isFile: true, mtimeMs: 500, size: 5 })
     stats.set(idxPath, { isDirectory: false, isFile: true, mtimeMs: 1000, size: 10 })
+    // A file that stat()s as existing must also HAVE content. Without these the fixture
+    // modelled an impossible world (existing-but-unreadable files), and the case passed for
+    // the wrong reason: computeSkillRows() bailed on the ENOENT from readFileSync and
+    // counted 0 rows, which happened to equal the 0 rows read from the contentless index.
+    files.set(mdPath, "---\nname: s1\ndescription: does s1\n---\n")
+    files.set(idxPath, "s1\tdoes s1\n")
     expect(needsRebuild(skillsDir, idxPath, baseDeps(fs))).toBe(false)
   }
 

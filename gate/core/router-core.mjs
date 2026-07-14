@@ -172,11 +172,37 @@ export const ROUTER_STOPWORDS = new Set([
  * `stopwords` defaults to the GATE's list (`scoreGate`'s caller); `scoreRouter` passes
  * `ROUTER_STOPWORDS` explicitly (K5) — the two scorers intentionally use DIFFERENT
  * stopword sets, matching their respective bash sources. */
+/**
+ * Two-letter tokens that are real technical signals, not noise.
+ *
+ * The `length >= 3` filter exists to kill "de", "el", "un" — and it was also killing the
+ * strongest domain terms we have. Concretely: for "necesito armar un componente de UI con
+ * buen pulido", emil-design-eng — whose description literally reads "UI polish, component
+ * design" — scored 2 against a SOFT_MIN of 3 and was dropped. It lost by exactly the point
+ * that "ui" would have contributed.
+ */
+export const SHORT_TERMS = new Set(["ui", "ux", "db", "ci", "cd", "qa", "ai", "js", "ts", "go", "os", "id"]);
+
+/**
+ * How many scored candidates reach classify().
+ *
+ * The bash original ended with `head -3`, and the port kept it faithfully. That cap made
+ * the documented contract false: REQUIRED is capped, SUGGESTED is supposed to be uncapped
+ * ("if five skills genuinely help, all five are surfaced"), but classify() never saw more
+ * than three rows — a complementary skill ranked fourth was discarded before anyone could
+ * suggest it.
+ *
+ * Widening the pool does NOT loosen enforcement. `required` is decided by a SCORE threshold
+ * (>= STRONG), never by rank, so a wider pool can only add SUGGESTED entries. Nothing new
+ * can block a turn. The cost is a handful of extra skill names in the prompt preamble.
+ */
+export const CANDIDATE_POOL = 10;
+
 export function tokenize(text, stopwords = STOPWORDS) {
   return (text || "")
     .toLowerCase()
     .split(/[^a-z0-9áéíóúñ]+/i)
-    .filter((t) => t.length >= 3 && !stopwords.has(t));
+    .filter((t) => (t.length >= 3 || SHORT_TERMS.has(t)) && !stopwords.has(t));
 }
 
 /** "a_b"-joined adjacent token pairs, order preserved. Pure. */
@@ -201,9 +227,14 @@ export const SOFT_MIN = 3;
  *   (score >= LEADER), enforce just that one.
  */
 export function classify(scored, { hardCap = 4 } = {}) {
-  let required = scored.filter((s) => s.score >= STRONG).slice(0, hardCap).map((s) => s.name);
+  // `fromLead === false` means every point this row scored came from pasted content, not
+  // from the ask. It may be suggested; it may never be mandated. Rows produced by callers
+  // that predate this field (no `fromLead` key) are treated as eligible, so an older
+  // caller is never silently stripped of its enforcement.
+  const mandatable = (s) => s.fromLead !== false;
+  let required = scored.filter((s) => s.score >= STRONG && mandatable(s)).slice(0, hardCap).map((s) => s.name);
   const LEADER = 5;
-  if (required.length === 0 && scored[0] && scored[0].score >= LEADER) {
+  if (required.length === 0 && scored[0] && scored[0].score >= LEADER && mandatable(scored[0])) {
     required = [scored[0].name];
   }
   const suggested = scored.filter((s) => !required.includes(s.name)).map((s) => s.name);
@@ -256,40 +287,114 @@ export function countWord(haystack, term, cap = Infinity) {
   return matches ? Math.min(matches.length, cap) : 0;
 }
 
+/**
+ * How many distinct query terms are scored.
+ *
+ * A pasted file is not a query. Intent lives in the words the user actually wrote, not in
+ * the 10KB they dumped below them. Bounding the query closes three problems at once:
+ *
+ *  - Cost. Scoring is O(terms x rows). Unbounded, a 10KB paste against 1307 skills took
+ *    4.6 SECONDS, and a large one would blow past the harness hook timeout — on every
+ *    prompt, in two hooks.
+ *  - Flooding. Scores sum per occurrence with no normalization, so a long paste does not
+ *    merely cost time, it WINS: a pasted Node stack trace scored powershell-module-architect
+ *    at 150 and mandated it.
+ *  - Noise. The 400th token of a dumped file says nothing about what the user wants.
+ */
+export const MAX_QUERY_TOKENS = 40;
+
+/**
+ * How many opening lines of the prompt count as "the ask".
+ *
+ * Deduping bounds the cost of a pasted file, but not its influence: its words really are in
+ * the prompt, and lexically they really do match. A pasted Node stack trace scored
+ * powershell-module-architect at 150 and MANDATED it. No scorer can guess that text is junk.
+ *
+ * What separates them is position. People state the ask, then paste the file underneath. So
+ * content past the opening lines may SUGGEST — it is context — but it can never MANDATE. You
+ * do not get blocked on a skill because of something inside a log you pasted.
+ */
+export const LEAD_LINES = 1;
+
+/** The opening lines of the prompt: what the user actually asked for. */
+export function leadText(prompt) {
+  return (prompt || "").split("\n").slice(0, LEAD_LINES).join("\n");
+}
+
+/**
+ * Precompile one matcher per DISTINCT term, then reuse it across every row.
+ *
+ * The whole-word fix compiled a RegExp inside the per-row loop, so a term was recompiled
+ * once for every skill in the index — millions of compiles per prompt. The bash it replaced
+ * used awk's index(), which is cheap C; this restores that cost profile while keeping
+ * word-boundary correctness.
+ */
+function compileTerms(terms) {
+  return terms.map((t) => ({
+    term: t,
+    find: wordPattern(t, "g"),
+    test: wordPattern(t, ""),
+  }));
+}
+
+function countWith(haystack, compiled, cap) {
+  compiled.find.lastIndex = 0;
+  const matches = haystack.match(compiled.find);
+  return matches ? Math.min(matches.length, cap) : 0;
+}
+
 export function scoreRouter(prompt, index, _deps) {
   // K5: tokenize with the ROUTER's own stopword list (skill-router.sh:138), NOT the
   // gate's — see the ROUTER_STOPWORDS doc comment above.
   // Expand Spanish terms into the English vocabulary the skill descriptions are written
   // in. Without this the prompt and the index share no words and noise wins outright.
-  const filtered = expandQuery(tokenize(prompt, ROUTER_STOPWORDS));
-  if (filtered.length === 0) return [];
-  const bg = bigrams(filtered);
+  const raw = expandQuery(tokenize(prompt, ROUTER_STOPWORDS));
+  if (raw.length === 0) return [];
+
+  // Bigrams come from the ORDERED head of the prompt, before dedup — adjacency is what a
+  // bigram means, and the user's real intent is in the words they typed first, not in a
+  // pasted blob further down.
+  const bg = bigrams(raw.slice(0, MAX_QUERY_TOKENS));
+
+  // Distinct terms only, bounded. Repeats add cost and flood the score without adding
+  // information: "animation animation animation" is one intent, not three.
+  const filtered = [...new Set(raw)].slice(0, MAX_QUERY_TOKENS);
+
+  // Compile ONCE per distinct term/bigram, then reuse across all 1300+ rows. Compiling
+  // inside the row loop is what made a pasted file take seconds.
+  const terms = compileTerms(filtered.filter(Boolean));
+  const pairs = compileTerms(bg.filter(Boolean).map((p) => p.replace(/_/g, " ")));
+
+  // Terms drawn from the opening lines — the ask itself. A row that matches none of these
+  // owes its whole score to pasted content and must never be MANDATED (see LEAD_LINES).
+  const lead = new Set(expandQuery(tokenize(leadText(prompt), ROUTER_STOPWORDS)));
 
   const rows = [];
   index.forEach((row, insertionIndex) => {
     const desc = (row.desc || "").toLowerCase();
     const lname = row.name.toLowerCase().replace(/[-_]/g, " ");
     let score = 0;
+    let fromLead = false;
 
-    for (const t of filtered) {
-      if (!t) continue;
+    for (const t of terms) {
       // Whole-word, capped at 3 (the awk original capped occurrences the same way).
-      score += countWord(desc, t, 3);
-      if (hasWord(lname, t)) score += 3;
+      const hits = countWith(desc, t, 3);
+      const inName = t.test.test(lname);
+      score += hits;
+      if (inName) score += 3;
+      if ((hits > 0 || inName) && lead.has(t.term)) fromLead = true;
     }
 
-    for (const pair of bg) {
-      if (!pair) continue;
-      const spaced = pair.replace(/_/g, " ");
-      if (hasWord(desc, spaced)) score += 2;
-      if (hasWord(lname, spaced)) score += 2;
+    for (const p of pairs) {
+      if (p.test.test(desc)) score += 2;
+      if (p.test.test(lname)) score += 2;
     }
 
-    if (score > 0) rows.push({ name: row.name, score, insertionIndex });
+    if (score > 0) rows.push({ name: row.name, score, fromLead, insertionIndex });
   });
 
   rows.sort((a, b) => b.score - a.score || a.insertionIndex - b.insertionIndex);
-  return rows.slice(0, 3).map((r) => ({ name: r.name, score: r.score }));
+  return rows.slice(0, CANDIDATE_POOL).map((r) => ({ name: r.name, score: r.score, fromLead: r.fromLead }));
 }
 
 // Ambient/meta tokens that describe the tooling itself, not the task domain.
@@ -483,6 +588,69 @@ function isPrunedDirName(name) {
  * no write — shared by `buildSkillIndex` (writes) and `needsRebuild` (W3: compares this
  * live count against what's currently indexed, to catch deletions mtime can't see).
  */
+/**
+ * Count index rows WITHOUT reading a single file.
+ *
+ * `needsRebuild` only ever needed an integer — "did a skill get deleted?" — but it obtained
+ * it by calling computeSkillRows(), which readFileSync's and frontmatter-parses every
+ * SKILL.md. On a real 1300-skill install that is ~1800 file reads on EVERY prompt, in BOTH
+ * hooks: ~240ms of pure waste per hook per turn, to learn one number.
+ *
+ * Row membership is decidable from directory structure alone — the contents only ever
+ * mattered for the DESCRIPTION. These counters mirror the compute* walks exactly, and a test
+ * pins them to the same number: a disagreement would make the router either rebuild on every
+ * prompt or never rebuild at all.
+ */
+export function countSkillRows(deps) {
+  const dir = skillsDirOf(deps);
+  let names = [];
+  try {
+    names = deps.fs.readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  let n = 0;
+  for (const name of names) {
+    const skillPath = deps.path.join(dir, name);
+    try {
+      if (!deps.fs.statSync(skillPath).isDirectory()) continue;
+      if (deps.fs.statSync(deps.path.join(skillPath, "SKILL.md")).isFile()) n++;
+    } catch {
+      continue; // dangling symlink, race, or no SKILL.md — not a row, never a crash
+    }
+  }
+  return n;
+}
+
+export function countAgentRows(deps) {
+  const root = agentsDirOf(deps);
+  let n = 0;
+  const walk = (dir) => {
+    let names = [];
+    try {
+      names = deps.fs.readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const full = deps.path.join(dir, name);
+      let st;
+      try {
+        st = deps.fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (st.isFile() && name.toLowerCase().endsWith(".md")) n++;
+    }
+  };
+  walk(root);
+  return n;
+}
+
 function computeSkillRows(deps) {
   const dir = skillsDirOf(deps);
   const rows = [];
@@ -658,18 +826,65 @@ function newestMdMtime(dir, deps) {
  * on disk in the index; any mismatch (shrink OR growth the mtime check somehow missed)
  * triggers a rebuild too.
  */
+/**
+ * How long a "nothing changed" answer stays good for.
+ *
+ * Answering "did any skill change?" means stat-ing every SKILL.md — ~1800 stats on a real
+ * install. That ran on EVERY prompt in BOTH hooks: ~470ms of latency per turn, to ask a
+ * question whose answer is almost always "no".
+ *
+ * So we stop re-asking on every keystroke. The index is still rebuilt the instant a change
+ * IS seen — this throttles the CHECK, not the rebuild.
+ *
+ * The trade-off, plainly: a skill you install right now can take up to this long to be
+ * routed. That is the right price. Nobody installs a skill and needs it routed in the same
+ * second; everybody pays the latency on every prompt.
+ */
+export const CHANGE_CHECK_TTL_MS = 60_000;
+
 export function needsRebuild(srcDir, idxPath, deps, kind = "skill") {
+  // Records when the tree was last examined. Stamped on every path that actually looks —
+  // including the ones that decide to rebuild — so the freshly-built index starts its TTL
+  // immediately instead of being re-scanned on the very next prompt.
+  const stamp = idxPath + ".checked";
+  const touch = () => {
+    try {
+      // On a cold install the cache dir does not exist yet — the index that creates it is
+      // written AFTER this. Without the mkdir the stamp silently failed to land and the
+      // very next prompt paid for a full walk again.
+      deps.fs.mkdirSync(deps.path.dirname(stamp), { recursive: true });
+      deps.fs.writeFileSync(stamp, String(deps.now()));
+    } catch {
+      // A stamp we cannot write only costs us the saving: we check again next prompt.
+      // Correctness is untouched. Never fail a prompt over a cache file.
+    }
+  };
+
   let idxStat;
   try {
     idxStat = deps.fs.statSync(idxPath);
   } catch {
+    touch();
     return true; // missing index -> rebuild
   }
-  if (idxStat.size === 0) return true; // empty index -> always rebuild
+  if (idxStat.size === 0) {
+    touch();
+    return true; // empty index -> always rebuild
+  }
+
+  try {
+    const last = Number(deps.fs.readFileSync(stamp, "utf8"));
+    if (Number.isFinite(last) && deps.now() - last < CHANGE_CHECK_TTL_MS) return false;
+  } catch {
+    // no stamp yet (or unreadable) -> fall through and do the full check
+  }
+  touch();
+
   const newest = newestMdMtime(srcDir, deps);
   if (newest === -1) return false; // src dir missing / no md files -> nothing to rebuild from
   if (newest > idxStat.mtimeMs) return true;
-  const currentRows = (kind === "agent" ? computeAgentRows(deps) : computeSkillRows(deps)).length;
+  // Count-only: never read file contents just to learn how many rows there are.
+  const currentRows = kind === "agent" ? countAgentRows(deps) : countSkillRows(deps);
   const indexedRows = loadIndex(idxPath, deps).length;
   return currentRows !== indexedRows;
 }
