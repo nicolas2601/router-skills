@@ -45,12 +45,18 @@ test("every installed hook resolves its router-core import", async () => {
   }
 })
 
-test("router-core lands where the hooks import it from", () => {
-  const home = "/home/nico"
-  const core = claudeRouterCore(home)
-  const lib = claudeGateLib(home)
-  // The hooks say `../core/router-core.mjs`. Resolve that against the installed lib
-  // and it must land on the file the installer actually wrote.
-  const resolved = path.resolve(path.dirname(lib), "../core/router-core.mjs")
+// Resolve with the SAME PathImpl the paths were built with. Using the native `path` here
+// against a POSIX fixture is how this test failed on the Windows runner — the same
+// platform-leak that broke the XDG tests earlier: an assertion that silently depends on
+// which OS happens to run it.
+test.each([
+  ["posix", path.posix, "/home/nico"],
+  ["win32", path.win32, "C:\\Users\\nico"],
+] as const)("router-core lands where the hooks import it from (%s)", (_name, impl, home) => {
+  const core = claudeRouterCore(home, impl)
+  const lib = claudeGateLib(home, impl)
+  // The hooks say `../core/router-core.mjs`. Resolved against the installed lib, that must
+  // land exactly on the file the installer wrote.
+  const resolved = impl.join(impl.dirname(lib), "..", "core", "router-core.mjs")
   expect(resolved).toBe(core)
 })
