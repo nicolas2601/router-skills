@@ -16,6 +16,7 @@ import {
   claudeGateTrack,
   claudeGateStop,
   claudeRouterCore,
+  claudeCoreDir,
   claudeSkillRouter,
   claudeUsageTracker,
   claudeSettings,
@@ -152,6 +153,10 @@ export function installClaude(dryRun: boolean): Action[] {
   // 1. hook files
   if (!dryRun) {
     ensureDir(hooksDir)
+    // router-core goes in ~/.claude/core/, not hooks/ — the shipped hooks import it as
+    // `../core/router-core.mjs`. Writing it flat next to them made that specifier resolve
+    // to a directory that did not exist, and every hook died on every prompt.
+    ensureDir(claudeCoreDir(HOME))
     writeText(core, ROUTER_CORE_MJS)
     writeText(lib, GATE_LIB_MJS)
     writeText(evalHook, GATE_EVAL_MJS)

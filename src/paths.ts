@@ -38,8 +38,18 @@ export const lastSuggestion = (home: string, p: PathImpl = nodePath) =>
   p.join(routerCacheDir(home, p), "last-suggestion.json")
 export const npxCacheDir = (home: string, p: PathImpl = nodePath) => p.join(routerCacheDir(home, p), "npx-cache")
 export const routerStateDir = (home: string, p: PathImpl = nodePath) => p.join(routerCacheDir(home, p), "state")
+/**
+ * router-core lives in ~/.claude/core/, NOT in hooks/.
+ *
+ * The hooks import it as `../core/router-core.mjs` — a specifier that is relative to the
+ * repo layout (gate/claude/ -> gate/core/). Writing all seven files flat into hooks/ made
+ * that specifier resolve to ~/.claude/core/, which did not exist, and every hook died with
+ * ERR_MODULE_NOT_FOUND on every prompt. Mirroring the source layout on disk keeps the
+ * specifier honest and needs no rewriting of the shipped code.
+ */
+export const claudeCoreDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "core")
 export const claudeRouterCore = (home: string, p: PathImpl = nodePath) =>
-  p.join(claudeHooksDir(home, p), "router-core.mjs")
+  p.join(claudeCoreDir(home, p), "router-core.mjs")
 export const claudeSkillRouter = (home: string, p: PathImpl = nodePath) =>
   p.join(claudeHooksDir(home, p), "skill-router.mjs")
 export const claudeUsageTracker = (home: string, p: PathImpl = nodePath) =>
