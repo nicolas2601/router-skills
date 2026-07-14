@@ -172,11 +172,37 @@ export const ROUTER_STOPWORDS = new Set([
  * `stopwords` defaults to the GATE's list (`scoreGate`'s caller); `scoreRouter` passes
  * `ROUTER_STOPWORDS` explicitly (K5) — the two scorers intentionally use DIFFERENT
  * stopword sets, matching their respective bash sources. */
+/**
+ * Two-letter tokens that are real technical signals, not noise.
+ *
+ * The `length >= 3` filter exists to kill "de", "el", "un" — and it was also killing the
+ * strongest domain terms we have. Concretely: for "necesito armar un componente de UI con
+ * buen pulido", emil-design-eng — whose description literally reads "UI polish, component
+ * design" — scored 2 against a SOFT_MIN of 3 and was dropped. It lost by exactly the point
+ * that "ui" would have contributed.
+ */
+export const SHORT_TERMS = new Set(["ui", "ux", "db", "ci", "cd", "qa", "ai", "js", "ts", "go", "os", "id"]);
+
+/**
+ * How many scored candidates reach classify().
+ *
+ * The bash original ended with `head -3`, and the port kept it faithfully. That cap made
+ * the documented contract false: REQUIRED is capped, SUGGESTED is supposed to be uncapped
+ * ("if five skills genuinely help, all five are surfaced"), but classify() never saw more
+ * than three rows — a complementary skill ranked fourth was discarded before anyone could
+ * suggest it.
+ *
+ * Widening the pool does NOT loosen enforcement. `required` is decided by a SCORE threshold
+ * (>= STRONG), never by rank, so a wider pool can only add SUGGESTED entries. Nothing new
+ * can block a turn. The cost is a handful of extra skill names in the prompt preamble.
+ */
+export const CANDIDATE_POOL = 10;
+
 export function tokenize(text, stopwords = STOPWORDS) {
   return (text || "")
     .toLowerCase()
     .split(/[^a-z0-9áéíóúñ]+/i)
-    .filter((t) => t.length >= 3 && !stopwords.has(t));
+    .filter((t) => (t.length >= 3 || SHORT_TERMS.has(t)) && !stopwords.has(t));
 }
 
 /** "a_b"-joined adjacent token pairs, order preserved. Pure. */
@@ -289,7 +315,7 @@ export function scoreRouter(prompt, index, _deps) {
   });
 
   rows.sort((a, b) => b.score - a.score || a.insertionIndex - b.insertionIndex);
-  return rows.slice(0, 3).map((r) => ({ name: r.name, score: r.score }));
+  return rows.slice(0, CANDIDATE_POOL).map((r) => ({ name: r.name, score: r.score }));
 }
 
 // Ambient/meta tokens that describe the tooling itself, not the task domain.
