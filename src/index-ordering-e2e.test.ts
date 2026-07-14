@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -24,6 +24,18 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 test("CLI: the skill/agent index pre-build runs AFTER skills/agents are linked — rows > 0 on a fresh install (W1)", () => {
   const home = mkdtempSync(join(tmpdir(), "skillforge-w1-order-"))
   try {
+    // Hermeticity: `detectTargets()` (src/detect.ts) treats a CLI as "present" when EITHER
+    // its config dir exists under $HOME OR its binary resolves on $PATH. This test's intent
+    // is "run the real installer end-to-end against a fresh Claude Code install" — it must
+    // NOT silently depend on whether the HOST machine happens to have `claude`/`opencode`
+    // installed/on PATH. A bare CI runner has neither, so `detectTargets()` legitimately
+    // returns zero present targets and the CLI exits 1 with "No supported CLI found" —
+    // confirmed locally by spawning the real CLI against a fresh $HOME with a PATH stripped
+    // of claude/opencode (see apply-progress.md for the raw output). Pre-creating an empty
+    // `~/.claude` here makes "claude" deterministically present regardless of host PATH
+    // state, so this test exercises the SAME scenario on every machine, dev or CI.
+    mkdirSync(join(home, ".claude"), { recursive: true })
+
     const result = spawnSync(process.execPath, ["run", join(ROOT, "src/index.ts"), "--yes"], {
       env: { HOME: home, PATH: process.env.PATH },
       input: "",
@@ -31,6 +43,13 @@ test("CLI: the skill/agent index pre-build runs AFTER skills/agents are linked �
       timeout: 60_000,
     })
 
+    // A silent, unexplained non-zero exit here is exactly the failure mode this whole change
+    // was hunting: paste the real stdout/stderr instead of leaving the next reader to guess.
+    if (result.status !== 0) {
+      throw new Error(
+        `CLI exited ${result.status} (signal: ${result.signal}), expected 0.\n--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
+      )
+    }
     expect(result.status).toBe(0)
 
     const idxPath = join(home, ".claude", ".router-cache", "skills-index.tsv")
