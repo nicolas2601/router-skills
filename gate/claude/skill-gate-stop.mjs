@@ -10,6 +10,12 @@
  * Loop safety: enforces at most ONE block per turn. `stop_hook_active` (set by
  * Claude Code when the model resumed *because* of this hook) short-circuits to
  * allow the turn to end, so we never deadlock.
+ *
+ * W8: the required-set is SHAPE-VALIDATED, not merely JSON-parsed. A corrupt
+ * contract like `{"required":"foo"}` parses fine, so a blind `try{JSON.parse}` never
+ * fires — and `"foo".filter(...)` then throws an UNCAUGHT TypeError that kills the
+ * Stop hook. A wrong-shaped set is now a DIAGNOSED allow (stderr diagnostic + the
+ * turn proceeds), never a crash and never a silent one either.
  */
 
 import { readFileSync, existsSync, writeFileSync } from "node:fs";
@@ -29,6 +35,20 @@ function allow() {
   process.exit(0);
 }
 
+/** Loud, non-blocking diagnostic. stdout is the harness's control channel — never touch it here. */
+function warn(msg) {
+  try {
+    process.stderr.write(`[GATE WARNING] ${msg}\n`);
+  } catch {
+    // stderr itself unwritable — nothing more we can do, and we must not throw
+  }
+}
+
+/** A valid required-set is an array of strings. Anything else is corrupt. */
+function isValidRequired(v) {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
 const raw = await readStdin();
 let j = {};
 try {
@@ -45,8 +65,23 @@ if (!existsSync(p.required)) allow();
 
 let required = [];
 try {
-  required = JSON.parse(readFileSync(p.required, "utf8")).required || [];
-} catch {
+  const parsed = JSON.parse(readFileSync(p.required, "utf8"));
+  const set = parsed?.required;
+  if (set === undefined || set === null) {
+    // No required-set recorded for this turn — a legitimate, non-corrupt state.
+    allow();
+  }
+  if (!isValidRequired(set)) {
+    warn(
+      `corrupt required-set at ${p.required} (expected an array of strings, got ${
+        Array.isArray(set) ? "an array with non-string entries" : typeof set
+      }) — allowing the turn, skill enforcement is INACTIVE this turn.`,
+    );
+    allow();
+  }
+  required = set;
+} catch (e) {
+  warn(`corrupt required-set at ${p.required} (${e?.message ?? String(e)}) — allowing the turn, skill enforcement is INACTIVE this turn.`);
   allow();
 }
 if (required.length === 0) allow();
@@ -70,7 +105,15 @@ try {
 
 if (missing.length === 0 || blocks >= 1) allow();
 
-writeFileSync(p.blocks, String(blocks + 1));
+try {
+  writeFileSync(p.blocks, String(blocks + 1));
+} catch (e) {
+  // Can't persist the block counter → can't guarantee the one-block-per-turn cap →
+  // blocking anyway risks a deadlock loop. Degrade LOUDLY instead of silently looping.
+  warn(`could not record the block counter (${e?.message ?? String(e)}) — allowing the turn to avoid a deadlock loop.`);
+  allow();
+}
+
 process.stdout.write(
   JSON.stringify({
     decision: "block",
