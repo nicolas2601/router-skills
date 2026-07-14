@@ -27,6 +27,43 @@ export const claudeAgentsDir = (home: string, p: PathImpl = nodePath) => p.join(
 /** Global memory file — Claude Code loads it in every session, any cwd. */
 export const claudeGlobalMd = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), "CLAUDE.md")
 
+// Router/tracker port (router-port-cross-platform): cache dir + derived index/state
+// paths, and the 3 new hook files. Mirrors the `claudeGateLib` pattern exactly.
+export const routerCacheDir = (home: string, p: PathImpl = nodePath) => p.join(claudeDir(home, p), ".router-cache")
+export const skillsIndexPath = (home: string, p: PathImpl = nodePath) =>
+  p.join(routerCacheDir(home, p), "skills-index.tsv")
+export const agentsIndexPath = (home: string, p: PathImpl = nodePath) =>
+  p.join(routerCacheDir(home, p), "agents-index.tsv")
+export const lastSuggestion = (home: string, p: PathImpl = nodePath) =>
+  p.join(routerCacheDir(home, p), "last-suggestion.json")
+export const npxCacheDir = (home: string, p: PathImpl = nodePath) => p.join(routerCacheDir(home, p), "npx-cache")
+export const routerStateDir = (home: string, p: PathImpl = nodePath) => p.join(routerCacheDir(home, p), "state")
+export const claudeRouterCore = (home: string, p: PathImpl = nodePath) =>
+  p.join(claudeHooksDir(home, p), "router-core.mjs")
+export const claudeSkillRouter = (home: string, p: PathImpl = nodePath) =>
+  p.join(claudeHooksDir(home, p), "skill-router.mjs")
+export const claudeUsageTracker = (home: string, p: PathImpl = nodePath) =>
+  p.join(claudeHooksDir(home, p), "skill-usage-tracker.mjs")
+
+/**
+ * Slug = absolute cwd, every char that is not an ASCII letter/digit replaced
+ * 1-for-1 with `-` (no collapsing of consecutive hyphens). Example:
+ * `/home/user` -> `-home-user`. Non-ASCII (e.g. accented Latin-1/UTF-8 in a
+ * Windows username) is replaced like any other special char — deliberate, not an
+ * oversight (avoids OS-specific filesystem encoding issues in the derived path).
+ */
+export const projectSlug = (cwd: string) => cwd.replace(/[^A-Za-z0-9]/g, "-")
+
+/**
+ * Candidate memory dirs, most-specific first. PURE — existence is decided by the
+ * caller (the impure `memoryDir` wrapper lives in `gate/core/router-core.mjs`,
+ * which needs `fs.existsSync`).
+ */
+export const memoryDirs = (home: string, cwd: string, p: PathImpl = nodePath) => [
+  p.join(claudeDir(home, p), "projects", projectSlug(cwd), "memory"),
+  routerStateDir(home, p),
+]
+
 /**
  * opencode's global config dir. Mirrors opencode's own resolution
  * (`packages/core/src/global.ts` → xdg-basedir): `$XDG_CONFIG_HOME/opencode`, else

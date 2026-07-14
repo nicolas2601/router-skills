@@ -1,119 +1,88 @@
 /**
  * skill-enforcer — OpenCode plugin (installed by router-skills)
  *
- * Real skill-gate (parity with the Claude Code skill-gate hooks). Three pieces:
+ * PLUGIN SHELL ONLY. This file's scorer identifiers (STOPWORDS, AMBIENT, tokenize,
+ * scoreGate, scoreRouter, classify, loadIndex, defaultDeps, skillsIndexPath, STRONG,
+ * SOFT_MIN, and friends) are NOT imported here — they are supplied by `router-core.mjs`,
+ * de-exported and prepended verbatim by `scripts/gen-templates.mjs` at generate time
+ * (see design.md's D6). This file is NEVER used standalone; only the composed
+ * `PLUGIN_TS` string constant (core + this shell) is shipped and copied to
+ * `~/.config/opencode/plugins/skill-enforcer.ts`.
+ *
+ * Real skill-gate (parity with the Claude Code skill-gate hooks), now with the SAME
+ * scoring math as Claude Code (no more hand-copied, drifted scorer — that drift, an
+ * incomplete STOPWORDS set missing the accented "también", is exactly the bug this
+ * unification closes). Four pieces:
  *   1. Deterministic contract  — score the user message, split into required
  *      (strong; enforced) and suggested (complementary; uncapped, never blocked).
  *   2. Gate (tool.execute.before) — block the first "work" tool until the
  *      required skills are loaded. Real enforcement, not advisory text.
  *   3. Aggressive auto-inject  — inline the top-2 SKILL.md bodies into the
  *      system prompt so the guidance is present even before any skill call.
+ *   4. Router advisory (NEW)  — opencode gains router-level suggestions (the same
+ *      `scoreRouter`+`classify` Claude Code's skill-router.mjs uses) for the first
+ *      time, injected as a complementary, non-enforced advisory block.
  *
  * Fail-open: every hook except the intentional gate throw is wrapped so a plugin
  * error can never break the chat pipeline. Auto-loaded from ~/.config/opencode/plugins/.
  */
 
 import type { Plugin } from "@opencode-ai/plugin"
-import { readFileSync, existsSync } from "node:fs"
-import { homedir } from "node:os"
-import { join } from "node:path"
 
-const HOME = homedir()
-const INDEX_PATH = join(HOME, ".claude", ".router-cache", "skills-index.tsv")
+const CORE_DEPS = defaultDeps()
+const SKILL_INDEX_PATH = skillsIndexPath(CORE_DEPS)
+const HOME = nodeHomedir()
 const SKILL_DIRS = [
-  join(HOME, ".config", "opencode", "skills"),
-  join(HOME, ".claude", "skills"),
-  join(HOME, ".agents", "skills"),
+  nodePath.join(HOME, ".config", "opencode", "skills"),
+  nodePath.join(HOME, ".claude", "skills"),
+  nodePath.join(HOME, ".agents", "skills"),
 ]
 
 const WORK_TOOLS = new Set(["write", "edit", "patch", "bash", "multiedit"])
-const STRONG = 6 // >= this → HARD-enforced (gate blocks). Below → soft suggestion.
-const SOFT_MIN = 3 // minimum score to surface at all
 const MARKER = "MANDATORY SKILL EVALUATION"
 
-const STOPWORDS = new Set([
-  "the","and","for","with","that","this","you","your","are","can","have","has",
-  "was","will","how","what","why","when","where","into","from","then","than",
-  "not","but","all","any","get","use","using","please","make","want","need",
-  "help","let","lets","add","que","los","las","una","uno","por","con","para",
-  "como","esto","esta","este","eso","porque","pero","todo","todos","muy","mas",
-  "hacer","haz","quiero","porfavor","porfa","favor","mira","listo","ahora",
-  "tambien","aplica","utiliza","sabes","algo","aca","aqui",
-])
+// ---- index loading (mirror of skill-gate-lib.mjs's real-fs adapter) ---------
 
-// Ambient/meta tokens (the tooling itself, not the task domain) score reduced so
-// a meta-prompt or a pasted link never force-blocks on irrelevant skills.
-const AMBIENT = new Set([
-  "claude","code","opencode","skill","skills","hook","hooks","gate","harness",
-  "tool","tools","plugin","plugins","run","corre","prueba","pruebalo","probar",
-  "test","tests","testing","instalador","instaladores","installer","install",
-  "funciona","aplicar","harneses",
-  "github","gitlab","bitbucket","com","http","https","www","git","repo","repos",
-  "link","url","raw","main","master","branch",
-])
-
-// ---- deterministic scorer (mirror of skill-gate-lib.mjs) --------------------
-
+// C1: THE ORIGINAL BUG, reintroduced verbatim for opencode. `ensureIndex()` is what
+// actually BUILDS the on-disk index — its only call sites used to be Claude-only
+// (installClaude, skill-gate-eval.mjs, skill-router.mjs). An opencode-only user (no
+// Claude Code installed at all) got NO index from anyone: `loadIndex` read a file that was
+// never written -> `[]` -> `if (INDEX_CACHE) return INDEX_CACHE` cached it FOREVER (arrays
+// are always truthy in JS — the old comment claiming "[] is truthy" was describing a
+// symptom, not this module's real bug) -> `scoreGate` always `[]` -> the tool gate NEVER
+// fires, silently, for the entire life of the plugin process, with no opencode equivalent
+// of `[ROUTER WARNING]`/`[GATE WARNING]` anywhere in this file.
+//
+// Fixed: `getIndex()` now calls `ensureIndex(CORE_DEPS)` itself (the plugin is the only
+// thing that will ever run for an opencode-only install), caches ONLY a genuinely
+// non-empty index (an explicit `!== null` check on the cache slot itself — never inferred
+// from array truthiness), and computes a LOUD `INDEX_WARNING` whenever the index build
+// failed or is still empty. Not caching the empty state means a later chat turn in the
+// SAME process self-heals automatically once skills actually appear on disk (e.g. a
+// Claude Code hook builds it in parallel, or the user runs router-skills mid-session) —
+// never stuck silently broken for the process lifetime again.
 let INDEX_CACHE: { name: string; desc: string }[] | null = null
-function loadIndex() {
-  if (INDEX_CACHE) return INDEX_CACHE
-  const rows: { name: string; desc: string }[] = []
-  if (existsSync(INDEX_PATH)) {
-    for (const line of readFileSync(INDEX_PATH, "utf8").split("\n")) {
-      if (!line.trim()) continue
-      const tab = line.indexOf("\t")
-      const name = (tab === -1 ? line : line.slice(0, tab)).trim()
-      const desc = (tab === -1 ? "" : line.slice(tab + 1)).trim().toLowerCase()
-      if (name) rows.push({ name, desc })
-    }
+let INDEX_WARNING = ""
+function getIndex(): { name: string; desc: string }[] {
+  if (INDEX_CACHE !== null) return INDEX_CACHE
+  const info = ensureIndex(CORE_DEPS)
+  const idx = loadIndex(SKILL_INDEX_PATH, CORE_DEPS)
+  if (info.indexError) {
+    INDEX_WARNING = `[SKILL GATE WARNING] index build failed (${info.indexError}) — enforcement INACTIVE.`
+  } else if (idx.length === 0) {
+    INDEX_WARNING = "[SKILL GATE WARNING] no skills installed yet — enforcement INACTIVE. Corré `router-skills` o `npx skills add ...`."
+  } else {
+    INDEX_WARNING = ""
   }
-  INDEX_CACHE = rows
-  return rows
-}
-
-function tokenize(text: string): string[] {
-  return (text || "")
-    .toLowerCase()
-    .split(/[^a-z0-9áéíóúñ]+/i)
-    .filter((t) => t.length >= 3 && !STOPWORDS.has(t))
-}
-
-function scoreSkills(prompt: string, max = 12): { name: string; score: number }[] {
-  const tokens = [...new Set(tokenize(prompt))]
-  if (tokens.length === 0) return []
-  const scored: { name: string; score: number }[] = []
-  for (const { name, desc } of loadIndex()) {
-    const nameFlat = name.toLowerCase().replace(/[-_]/g, "")
-    const nameTokens = new Set(name.toLowerCase().split(/[-_]/))
-    let score = 0
-    for (const t of tokens) {
-      const amb = AMBIENT.has(t)
-      if (nameTokens.has(t)) score += amb ? 0.5 : 3
-      else if (nameFlat.includes(t)) score += amb ? 0 : 1.5
-      if (desc.includes(t)) score += amb ? 0.25 : 1
-    }
-    if (score >= SOFT_MIN) scored.push({ name, score })
-  }
-  scored.sort((a, b) => b.score - a.score)
-  return scored.slice(0, max)
-}
-
-/** Split into HARD required (score >= STRONG, capped) and SOFT suggested (rest). */
-function classify(scored: { name: string; score: number }[], hardCap = 4) {
-  let required = scored.filter((s) => s.score >= STRONG).slice(0, hardCap).map((s) => s.name)
-  const LEADER = 5
-  if (required.length === 0 && scored[0] && scored[0].score >= LEADER) {
-    required = [scored[0].name]
-  }
-  const suggested = scored.filter((s) => !required.includes(s.name)).map((s) => s.name)
-  return { required, suggested }
+  if (idx.length > 0) INDEX_CACHE = idx // never cache an empty/failed build permanently
+  return idx
 }
 
 function readSkillBody(name: string, maxChars = 2500): string {
   for (const dir of SKILL_DIRS) {
-    const p = join(dir, name, "SKILL.md")
-    if (existsSync(p)) {
-      const body = readFileSync(p, "utf8").trim()
+    const p = nodePath.join(dir, name, "SKILL.md")
+    if (nodeFs.existsSync(p)) {
+      const body = nodeFs.readFileSync(p, "utf8").trim()
       return body.length > maxChars ? body.slice(0, maxChars) + "\n…[truncated]" : body
     }
   }
@@ -122,7 +91,14 @@ function readSkillBody(name: string, maxChars = 2500): string {
 
 // ---- per-session turn state -------------------------------------------------
 
-type TurnState = { required: string[]; suggested: string[]; loaded: Set<string>; blocked: boolean }
+type TurnState = {
+  required: string[]
+  suggested: string[]
+  routerRequired: string[]
+  routerSuggested: string[]
+  loaded: Set<string>
+  blocked: boolean
+}
 const SESSIONS = new Map<string, TurnState>()
 let LAST: TurnState | null = null // fallback bridge chat.message → system.transform
 
@@ -130,7 +106,7 @@ function stateFor(sessionID?: string): TurnState {
   const key = sessionID || "__last__"
   let s = SESSIONS.get(key)
   if (!s) {
-    s = { required: [], suggested: [], loaded: new Set(), blocked: false }
+    s = { required: [], suggested: [], routerRequired: [], routerSuggested: [], loaded: new Set(), blocked: false }
     SESSIONS.set(key, s)
   }
   return s
@@ -153,14 +129,21 @@ loaded. Naming a skill without loading it is worthless.`
 
 export const SkillEnforcer: Plugin = async () => {
   return {
-    // Piece 1: score the incoming user message, arm the turn contract.
+    // Piece 1: score the incoming user message (gate math), arm the turn contract.
+    // Piece 4 (NEW): ALSO score router-level (scoreRouter+classify) for an advisory
+    // block — opencode gaining router-level suggestions for the first time (AC-13).
     "chat.message": async (_input: any, output: any) => {
       try {
         const parts = output?.parts ?? output?.message?.parts ?? []
-        const { required, suggested } = classify(scoreSkills(textFromParts(parts)))
+        const text = textFromParts(parts)
+        const idx = getIndex()
+        const { required, suggested } = classify(scoreGate(text, idx))
+        const { required: routerRequired, suggested: routerSuggested } = classify(scoreRouter(text, idx, CORE_DEPS))
         const s = stateFor(output?.message?.sessionID)
         s.required = required
         s.suggested = suggested
+        s.routerRequired = routerRequired
+        s.routerSuggested = routerSuggested
         s.loaded = new Set()
         s.blocked = false
         LAST = s
@@ -169,7 +152,8 @@ export const SkillEnforcer: Plugin = async () => {
       }
     },
 
-    // Pieces 1 + 3: inject directive + required + suggested + top-2 skill bodies.
+    // Pieces 1 + 3 + 4: inject directive + required + suggested + top-2 skill bodies +
+    // the router advisory block (complementary, never gate-enforced).
     "experimental.chat.system.transform": async (_input: any, output: any) => {
       try {
         if (!output || typeof output !== "object") return
@@ -177,11 +161,17 @@ export const SkillEnforcer: Plugin = async () => {
         if (sys.some((x) => typeof x === "string" && x.includes(MARKER))) return // idempotent
         const s = LAST
         let block = DIRECTIVE
+        // C1: a LOUD, never-silent warning when the index is empty or failed to build —
+        // the exact bug this whole change exists to kill, now closed for opencode too.
+        if (INDEX_WARNING) block += `\n\n${INDEX_WARNING}`
         if (s && s.required.length > 0) {
           block += `\n\nREQUIRED_SKILLS (strong match — a work tool is blocked until each is loaded):\n  ${s.required.join(", ")}`
         }
         if (s && s.suggested.length > 0) {
           block += `\n\nSUGGESTED_SKILLS (complementary — NOT enforced, but load every one that genuinely helps; combining several is expected):\n  ${s.suggested.join(", ")}`
+        }
+        if (s && (s.routerRequired.length > 0 || s.routerSuggested.length > 0)) {
+          block += `\n\nROUTER_SUGGESTIONS (advisory — router-level match, NOT gate-enforced, complementary to the required/suggested sets above):\n  ${[...s.routerRequired, ...s.routerSuggested].join(", ")}`
         }
         if (s && (s.required.length > 0 || s.suggested.length > 0)) {
           const injected: string[] = []

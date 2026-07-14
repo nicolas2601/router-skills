@@ -1,6 +1,11 @@
 import { test, expect } from "bun:test"
 import nodePath from "node:path"
-import { claudeHookPath, claudeSettings, claudeSkillsDir, claudeAgentsDir, opencodeBase, opencodePlugin, opencodeConfig, opencodeAgentsDir, opencodeRuleFile } from "./paths.ts"
+import {
+  claudeHookPath, claudeSettings, claudeSkillsDir, claudeAgentsDir, opencodeBase, opencodePlugin,
+  opencodeConfig, opencodeAgentsDir, opencodeRuleFile,
+  routerCacheDir, skillsIndexPath, agentsIndexPath, lastSuggestion, npxCacheDir, routerStateDir,
+  claudeRouterCore, claudeSkillRouter, claudeUsageTracker, projectSlug, memoryDirs,
+} from "./paths.ts"
 
 const win = nodePath.win32
 const posix = nodePath.posix
@@ -62,4 +67,54 @@ test("xdg: derived paths honor XDG_CONFIG_HOME", () => {
   expect(opencodePlugin("/home/nico", posix, env)).toBe("/custom/cfg/opencode/plugins/skill-enforcer.ts")
   expect(opencodeConfig("/home/nico", posix, env)).toBe("/custom/cfg/opencode/opencode.json")
   expect(opencodeRuleFile("/home/nico", posix, env)).toBe("/custom/cfg/opencode/skill-enforcement.md")
+})
+
+// T015 (AC-9): new router-core path builders, injectable PathImpl.
+test("windows: skills index path", () => {
+  expect(skillsIndexPath("C:\\Users\\nico", win)).toBe(
+    "C:\\Users\\nico\\.claude\\.router-cache\\skills-index.tsv"
+  )
+})
+test("posix: router cache dir", () => {
+  expect(routerCacheDir("/home/nico", posix)).toBe("/home/nico/.claude/.router-cache")
+})
+test("posix: agents index path", () => {
+  expect(agentsIndexPath("/home/nico", posix)).toBe("/home/nico/.claude/.router-cache/agents-index.tsv")
+})
+test("posix: last suggestion path", () => {
+  expect(lastSuggestion("/home/nico", posix)).toBe("/home/nico/.claude/.router-cache/last-suggestion.json")
+})
+test("posix: npx cache dir", () => {
+  expect(npxCacheDir("/home/nico", posix)).toBe("/home/nico/.claude/.router-cache/npx-cache")
+})
+test("posix: router state dir", () => {
+  expect(routerStateDir("/home/nico", posix)).toBe("/home/nico/.claude/.router-cache/state")
+})
+test("posix: claude router core hook path", () => {
+  expect(claudeRouterCore("/home/nico", posix)).toBe("/home/nico/.claude/hooks/router-core.mjs")
+})
+test("posix: claude skill router hook path", () => {
+  expect(claudeSkillRouter("/home/nico", posix)).toBe("/home/nico/.claude/hooks/skill-router.mjs")
+})
+test("posix: claude usage tracker hook path", () => {
+  expect(claudeUsageTracker("/home/nico", posix)).toBe("/home/nico/.claude/hooks/skill-usage-tracker.mjs")
+})
+
+// T016 (AC-7): projectSlug — one hyphen per non-alnum char, no collapsing.
+test("projectSlug: one hyphen per non-alnum char, no collapsing (AC-7)", () => {
+  expect(projectSlug("/home/nico")).toBe("-home-nico")
+  expect(projectSlug("C:\\Users\\nico")).toBe("C--Users-nico")
+  // Non-ASCII edge case: an accented char is replaced like any other special char.
+  expect(projectSlug("/home/nicolás")).toBe("-home-nicol-s")
+})
+
+// T017 (AC-7/AC-9): memoryDirs — pure candidates, most-specific first, derived from cwd.
+test("memoryDirs: candidates derived from cwd, win32 exact string (AC-7)", () => {
+  const dirs = memoryDirs("C:\\Users\\u", "C:\\proj\\app", win)
+  expect(dirs[0]).toBe("C:\\Users\\u\\.claude\\projects\\C--proj-app\\memory")
+  expect(dirs[1]).toBe(routerStateDir("C:\\Users\\u", win))
+
+  // Slug is derived from cwd, not home (home !== cwd fixture).
+  const dirs2 = memoryDirs("/home/u", "/home/u/projects/app", posix)
+  expect(dirs2[0]).toBe("/home/u/.claude/projects/-home-u-projects-app/memory")
 })
