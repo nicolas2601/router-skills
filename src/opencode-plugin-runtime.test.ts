@@ -70,7 +70,12 @@ test("opencode plugin: getIndex() builds the index and warns loudly when empty, 
     )
 
     const result = spawnSync(process.execPath, [harnessPath], {
-      env: { HOME: home, PATH: process.env.PATH },
+      // W10 (Windows): node's os.homedir() reads USERPROFILE on win32, NOT HOME (POSIX-only)
+      // — see gate-scripts-e2e.test.ts's W7 comment for the full mechanism. Without this,
+      // the plugin's defaultDeps() silently read the REAL runner's ~/.claude/skills instead
+      // of this scratch, empty $HOME — the index was never actually empty on Windows, so
+      // the (a) assertion below saw real skill content instead of the loud warning.
+      env: { HOME: home, USERPROFILE: home, PATH: process.env.PATH },
       encoding: "utf8",
       timeout: 20_000,
     })

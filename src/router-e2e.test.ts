@@ -46,12 +46,14 @@ test("K4 e2e: turn 1 on a fresh $HOME evaluates real skills immediately, never s
 
     // W12: the suite's own hermeticity rule forbids spreading ambient `process.env` — a
     // future CI-wide env var (e.g. `SKILLFORGE_NPX_FIND=1`) would silently make this test
-    // spawn real network calls. Only the two vars this child process genuinely needs
-    // (`HOME` to resolve the fresh install, `PATH` to find the node/bun runtime) are
-    // forwarded explicitly.
+    // spawn real network calls. Only the vars this child process genuinely needs (`HOME` to
+    // resolve the fresh install, `PATH` to find the node/bun runtime) are forwarded
+    // explicitly — plus `USERPROFILE` (W10, Windows): node's os.homedir() reads
+    // USERPROFILE on win32, NOT HOME, so without it this test's scratch $HOME was silently
+    // ignored on Windows and `defaultDeps()` fell back to the real runner profile dir.
     const result = spawnSync(process.execPath, [evalScript], {
       input: JSON.stringify({ prompt, session_id: sessionId }),
-      env: { HOME: home, PATH: process.env.PATH },
+      env: { HOME: home, USERPROFILE: home, PATH: process.env.PATH },
       encoding: "utf8",
       timeout: 20_000,
     })

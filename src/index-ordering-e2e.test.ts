@@ -37,7 +37,11 @@ test("CLI: the skill/agent index pre-build runs AFTER skills/agents are linked â
     mkdirSync(join(home, ".claude"), { recursive: true })
 
     const result = spawnSync(process.execPath, ["run", join(ROOT, "src/index.ts"), "--yes"], {
-      env: { HOME: home, PATH: process.env.PATH },
+      // W10 (Windows): node's os.homedir() reads USERPROFILE on win32, NOT HOME (POSIX-only)
+      // â€” see gate-scripts-e2e.test.ts's W7 comment for the full mechanism. Forwarding both
+      // makes `src/util.ts`'s `export const HOME = homedir()` resolve to this scratch $HOME
+      // on every OS, not silently fall back to the real runner profile on Windows.
+      env: { HOME: home, USERPROFILE: home, PATH: process.env.PATH },
       input: "",
       encoding: "utf8",
       timeout: 60_000,

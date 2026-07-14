@@ -88,7 +88,13 @@ test("skill-gate-eval: a contract-write failure (EISDIR) surfaces [GATE WARNING]
     const evalScript = join(ROOT, "gate/claude/skill-gate-eval.mjs")
     const result = spawnSync(process.execPath, [evalScript], {
       input: JSON.stringify({ prompt: "please review my react component", session_id: sessionId }),
-      env: { HOME: home, PATH: process.env.PATH },
+      // W10 (Windows): node's os.homedir() reads USERPROFILE on win32, NOT HOME (POSIX-only).
+      // spawnSync's `env` REPLACES the child's environment wholesale, so forwarding only
+      // HOME left USERPROFILE unset on Windows -> os.homedir() (called inside
+      // gate/core/router-core.mjs's defaultDeps()) fell back to the REAL runner profile
+      // dir instead of this scratch $HOME, and every forced-failure fixture below (which
+      // pre-creates conflicting paths under the scratch dir) silently missed its target.
+      env: { HOME: home, USERPROFILE: home, PATH: process.env.PATH },
       encoding: "utf8",
       timeout: 20_000,
     })
@@ -118,7 +124,7 @@ test("skill-gate-stop: a wrong-shaped required field is a diagnosed allow, never
     const stopScript = join(ROOT, "gate/claude/skill-gate-stop.mjs")
     const result = spawnSync(process.execPath, [stopScript], {
       input: JSON.stringify({ session_id: sessionId }),
-      env: { HOME: home, PATH: process.env.PATH },
+      env: { HOME: home, USERPROFILE: home, PATH: process.env.PATH }, // W10, see the W7 test above
       encoding: "utf8",
       timeout: 20_000,
     })
@@ -147,7 +153,7 @@ test("skill-gate-track: an append failure (EISDIR) surfaces a diagnostic, distin
     const trackScript = join(ROOT, "gate/claude/skill-gate-track.mjs")
     const result = spawnSync(process.execPath, [trackScript], {
       input: JSON.stringify({ session_id: sessionId, tool_name: "Skill", tool_input: { skill: "code-review" } }),
-      env: { HOME: home, PATH: process.env.PATH },
+      env: { HOME: home, USERPROFILE: home, PATH: process.env.PATH }, // W10, see the W7 test above
       encoding: "utf8",
       timeout: 20_000,
     })
@@ -167,7 +173,7 @@ test("skill-gate-track: malformed stdin stays silent (no write was ever attempte
     const trackScript = join(ROOT, "gate/claude/skill-gate-track.mjs")
     const result = spawnSync(process.execPath, [trackScript], {
       input: "{ not valid json",
-      env: { HOME: home, PATH: process.env.PATH },
+      env: { HOME: home, USERPROFILE: home, PATH: process.env.PATH }, // W10, see the W7 test above
       encoding: "utf8",
       timeout: 20_000,
     })
