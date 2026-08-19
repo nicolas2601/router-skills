@@ -29,7 +29,8 @@ export function pathEntry(existing: string, entry: string, platform: LauncherPla
   if (entries.some((candidate) => canonicalPath(candidate, platform) === wanted)) {
     return { value: existing, added: false }
   }
-  return { value: existing ? `${existing}${delimiter}${entry}` : entry, added: true }
+  const prefix = existing.replace(delimiter === ";" ? /;+$/ : /:+$/, "")
+  return { value: prefix ? `${prefix}${delimiter}${entry}` : entry, added: true }
 }
 
 export const updatedSessionPath = (existing: string, entry: string, platform: LauncherPlatform) =>

@@ -32,6 +32,37 @@ test("pathEntry: preserves existing PATH and deduplicates platform spellings", (
   })
 })
 
+test("pathEntry: Windows PATH ending in a delimiter does not duplicate it", () => {
+  expect(pathEntry("C:\\Windows;", "C:\\Users\\Ada\\.local\\bin", "windows")).toEqual({
+    value: "C:\\Windows;C:\\Users\\Ada\\.local\\bin",
+    added: true,
+  })
+})
+
+test("pathEntry: POSIX PATH ending in a delimiter does not duplicate it", () => {
+  expect(pathEntry("/usr/bin:", "/home/ada/.local/bin", "posix")).toEqual({
+    value: "/usr/bin:/home/ada/.local/bin",
+    added: true,
+  })
+})
+
+test("pathEntry: joining covers empty, normal, repeated delimiters, and duplicates on both platforms", () => {
+  const cases = [
+    ["windows", "", "C:\\Users\\Ada\\.local\\bin", "C:\\Users\\Ada\\.local\\bin", true],
+    ["windows", "C:\\Windows;C:\\Tools", "C:\\Users\\Ada\\.local\\bin", "C:\\Windows;C:\\Tools;C:\\Users\\Ada\\.local\\bin", true],
+    ["windows", "C:\\Windows;;;", "C:\\Users\\Ada\\.local\\bin", "C:\\Windows;C:\\Users\\Ada\\.local\\bin", true],
+    ["windows", "C:\\Windows;C:\\Users\\Ada\\.local\\bin;;", "C:\\Users\\Ada\\.local\\bin", "C:\\Windows;C:\\Users\\Ada\\.local\\bin;;", false],
+    ["posix", "", "/home/ada/.local/bin", "/home/ada/.local/bin", true],
+    ["posix", "/usr/bin:/opt/bin", "/home/ada/.local/bin", "/usr/bin:/opt/bin:/home/ada/.local/bin", true],
+    ["posix", "/usr/bin:::", "/home/ada/.local/bin", "/usr/bin:/home/ada/.local/bin", true],
+    ["posix", "/usr/bin:/home/ada/.local/bin::", "/home/ada/.local/bin", "/usr/bin:/home/ada/.local/bin::", false],
+  ] as const
+
+  for (const [platform, existing, entry, value, added] of cases) {
+    expect(pathEntry(existing, entry, platform)).toEqual({ value, added })
+  }
+})
+
 test("launcherContent: quotes spaces and is independent of cwd on both platforms", () => {
   const windows = launcherContent(
     "windows",
