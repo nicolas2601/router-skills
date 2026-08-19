@@ -15,6 +15,7 @@ import {
   opencodeAgentsMd,
 } from "./paths.ts"
 import { MINDSET_START } from "./mindset-template.ts"
+import { launcherPath, type LauncherPlatform } from "./launcher-install.ts"
 
 /** A single read-only health check. `ok:null` = not applicable (target not installed). */
 export type Check = { name: string; ok: boolean | null; detail: string }
@@ -91,6 +92,14 @@ const count = (dir: string): number => {
 /** Read-only audit of what router-skills has (or hasn't) installed. Writes nothing. */
 export function verify(): Check[] {
   const checks: Check[] = []
+
+  const launcherPlatform: LauncherPlatform = process.platform === "win32" ? "windows" : "posix"
+  const launcher = launcherPath(HOME, launcherPlatform)
+  checks.push({
+    name: `${launcherPlatform}: launcher`,
+    ok: existsSync(launcher),
+    detail: launcher,
+  })
 
   // ── Claude Code ────────────────────────────────────────────────
   const evalHook = claudeGateEval(HOME)
@@ -200,8 +209,7 @@ function sampleOpencodeAgents(dir: string, limit: number): { total: number; vali
       if (total >= limit) break
       total++
       try {
-        const head = readFileSync(`${dir}/${name}`, "utf8").slice(0, 512)
-        if (/\bmode:\s*subagent\b/.test(head) && /\bdescription:/.test(head)) valid++
+        if (isValidOpencodeAgentFrontmatter(readFileSync(`${dir}/${name}`, "utf8"))) valid++
       } catch {
         /* unreadable — counts as invalid */
       }
@@ -210,4 +218,12 @@ function sampleOpencodeAgents(dir: string, limit: number): { total: number; vali
     /* dir missing */
   }
   return { total, valid }
+}
+
+/** Validate the frontmatter, not an arbitrary byte prefix. Long descriptions can push mode below 512 bytes. */
+export function isValidOpencodeAgentFrontmatter(text: string): boolean {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)
+  if (!match) return false
+  return /(^|\r?\n)\s*mode:\s*subagent\s*(?:\r?\n|$)/.test(match[1]) &&
+    /(^|\r?\n)\s*description\s*:/.test(match[1])
 }

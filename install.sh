@@ -47,4 +47,8 @@ fi
 cd "$DEST"
 info "Installing dependencies ..."
 bun install --silent
+bun run src/launcher-install.ts --platform posix --repo-path "$DEST"
+# A child process cannot update the caller's shell. The shared installer persists PATH
+# idempotently; this is only the current shell process convenience path.
+export PATH="$(bun run src/launcher-install.ts --platform posix --session-path --bin-dir "$HOME/.local/bin")"
 exec bun run src/index.ts "$@"
