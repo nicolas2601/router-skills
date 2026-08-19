@@ -9,8 +9,10 @@
 [opencode](https://opencode.ai) actually use their Agent Skills on every turn — and think
 like a senior engineer while doing it.**
 
-Works on **Linux, macOS, and Windows**. Safe to re-run. Backs up everything it touches.
-Never overwrites a config it can't parse.
+Works on **Linux, macOS, and Windows**. Safe to re-run. When updating an existing
+`opencode.json`, the provisioner creates a backup before writing it. The opencode plugin and
+rule files are overwritten without a backup, so back up your configuration before executing
+the installer if you need to preserve those files. Never overwrites a config it can't parse.
 
 ---
 
@@ -20,6 +22,9 @@ Never overwrites a config it can't parse.
 - [What you get](#what-you-get)
 - [Requirements](#requirements)
 - [Install](#install)
+  - [Windows](#windows)
+  - [Linux / macOS](#linux--macos)
+  - [Prebuilt binary (no bun/git needed to run)](#prebuilt-binary-no-bungit-needed-to-run)
 - [How the skill gate works](#how-the-skill-gate-works)
 - [The FABLE mindset protocol](#the-fable-mindset-protocol)
 - [What gets written where](#what-gets-written-where)
@@ -30,6 +35,7 @@ Never overwrites a config it can't parse.
 - [Safety guarantees](#safety-guarantees)
 - [Skill pack & agent pack](#skill-pack--agent-pack)
 - [For contributors](#for-contributors)
+- [Security note](#security-note)
 - [License](#license)
 
 ---
@@ -62,53 +68,83 @@ You run it once; both harnesses behave better in every project afterward.
 | **Prompt injection** | pasted "ignore previous instructions" sometimes obeyed | content treated as data, embedded commands surfaced not obeyed |
 | **Skills/agents** | whatever you set up per-tool | one bundled pack shared by both tools |
 | **Token cost** | unbounded bash/MCP output, defaults everywhere | verified caps + compaction — without disabling skills or reasoning |
-| **Config safety** | manual edits, easy to clobber | backups + strict-JSON-only writes + idempotent re-runs |
+| **Config safety** | manual edits, easy to clobber | `opencode.json` backup + strict-JSON-only writes + idempotent re-runs |
 
 ## Requirements
 
-- **git** on your PATH — the only hard prerequisite (used to clone/update).
-- **[bun](https://bun.sh)** — the installer runs on it. **You don't need to install it
-  yourself**: if it's missing, the one-liner installs it for you.
-- **A JS runtime for the hooks** — `node` *or* `bun`. The installer detects which one you
-  have and wires the hooks to use it (so a bun-only machine works too), and warns you if
-  neither is present.
-
-At least one of **Claude Code** or **opencode** must be installed — router-skills detects
-which and only configures what's there.
+- **git** on your PATH, used to clone or update the checkout.
+- **[Bun](https://bun.sh)**, used to install dependencies and run the provisioner.
+- **Claude Code** and **opencode** are optional targets. The installer detects and configures
+  the targets that are present.
 
 ## Install
 
-### One command
+The bootstrap scripts install or update the checkout at `~/.router-skills`, install the
+dependencies, create the launcher, and then run the provisioner. They are safe to re-run.
 
-**Linux / macOS**
+### Windows
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/nicolas2601/router-skills/main/install.sh | bash
-```
+`install.ps1` works with both Windows PowerShell 5.1 and PowerShell 7.
 
-**Windows (PowerShell)**
+#### Bootstrap remoto
 
 ```powershell
 irm https://raw.githubusercontent.com/nicolas2601/router-skills/main/install.ps1 | iex
 ```
 
-> Two scripts, one for each shell — `curl | bash` and `irm | iex` are different worlds, so
-> like bun/deno/rustup there's one bootstrap per OS. Both do the same thing: clone into
-> `~/.router-skills`, install bun if needed, and run the provisioner.
+#### Desde un clone
 
-**Piped installs run non-interactively.** With no terminal to prompt in, the installer
-configures every detected tool with sensible defaults. Want to choose? Run it in a terminal
-(next section) or pass flags.
+```powershell
+git clone https://github.com/nicolas2601/router-skills.git $HOME\.router-skills
+Set-Location $HOME\.router-skills
+bun install
+bun run src\launcher-install.ts --platform windows --repo-path $PWD
+bun run src\index.ts --yes
+```
 
-### From a checkout (interactive TUI)
+The Windows launcher is created at `%USERPROFILE%\.local\bin\router-skills.cmd`. The
+installer adds that directory to the User PATH idempotently. An already-open PowerShell or
+CMD keeps its existing PATH, so open a new PowerShell or CMD before verifying:
+
+```powershell
+Get-Command router-skills
+$env:Path -split ';' | Where-Object { $_ -eq "$HOME\.local\bin" }
+router-skills --verify
+```
+
+### Linux / macOS
+
+#### Bootstrap remoto
 
 ```bash
-git clone https://github.com/nicolas2601/router-skills.git
-cd router-skills && bun install
+curl -fsSL https://raw.githubusercontent.com/nicolas2601/router-skills/main/install.sh | bash
+```
 
-bun run start        # interactive menu — pick tools, skills, agents, mindset
-bun run dry          # preview everything, write nothing
-bun run install:all  # configure everything detected, no prompts
+#### Desde un clone
+
+```bash
+git clone https://github.com/nicolas2601/router-skills.git "$HOME/.router-skills"
+cd "$HOME/.router-skills"
+bash install.sh
+```
+
+The POSIX launcher is created at `$HOME/.local/bin/router-skills`. The installer adds that
+directory once to the shell startup file selected from the current shell: `.zshrc` for Zsh,
+`.bashrc` for Bash, or `.profile` as a fallback. Reload the selected file or open a new shell:
+
+```bash
+. "$HOME/.zshrc"     # use .bashrc or .profile when that is the selected file
+command -v router-skills
+router-skills --verify
+```
+
+Piped installs run non-interactively. To use the interactive menu, run the provisioner from
+a checkout instead:
+
+```bash
+bun run start        # interactive menu
+bun run dry          # preview; writes nothing
+bun run install:all  # configure every detected target without prompts
 ```
 
 ### Prebuilt binary (no bun/git needed to run)
@@ -219,9 +255,10 @@ alone instead of duplicating it.
 | **Agents (opencode)** | **converted** copies → `~/.config/opencode/agents/*.md` | opencode's schema differs (`mode` required, `tools` is an object), so each is rewritten to a schema-valid agent; stale raw links from old installs are pruned. |
 | **Mindset (FABLE)** | managed block in `~/.claude/CLAUDE.md` **and** `~/.config/opencode/AGENTS.md` | see [above](#the-fable-mindset-protocol). |
 
-Every JSON file is backed up as `<file>.bak.<timestamp>` before it's touched. Re-running is
-safe: applied steps are detected and skipped, and the run ends with a health summary +
-next-steps.
+Existing `opencode.json` is backed up as `<file>.bak.<timestamp>` before it is updated. The
+opencode plugin and rule files, launcher, and selected shell startup file are written without
+a backup. Re-running is safe: applied steps are detected and skipped, and the run ends with a
+health summary + next-steps.
 
 ## Token cost settings
 
@@ -295,17 +332,30 @@ Run these from a checkout as `bun run src/index.ts <flag>`, or on the installed 
 router-skills --verify
 ```
 
+If the launcher is not available yet, run the verifier directly from the checkout:
+
+```bash
+bun run src/index.ts --verify
+```
+
 Read-only. Checks: the gate hook files + settings wiring, the opencode plugin + rule +
 config, linked skill/agent counts, that converted opencode agents are schema-valid
 (`mode: subagent`), and that the FABLE mindset block is present in both global rules files.
 Non-zero exit if any check fails — re-run `router-skills` to repair.
 
+For repository verification, use the longer timeout because an end-to-end test can exceed
+15 seconds on some hosts:
+
+```bash
+bun test src/ --timeout 30000
+```
+
 ## Uninstall
 
 router-skills is additive and reversible:
 
-1. **Restore configs** — each edited `settings.json` / `opencode.json` /
-   `CLAUDE.md` / `AGENTS.md` has a `*.bak.<timestamp>` next to it; restore the latest.
+1. **Restore configs** — where an existing `settings.json` / `opencode.json` /
+   `CLAUDE.md` / `AGENTS.md` was updated, restore the latest `*.bak.<timestamp>` next to it.
 2. **Remove hooks/plugin** — delete `~/.claude/hooks/skill-gate-*.mjs`,
    `~/.claude/hooks/skill-router.mjs`, `~/.claude/hooks/skill-usage-tracker.mjs`,
    `~/.claude/core/` (the shared scorer + lexicon),
@@ -342,6 +392,33 @@ scorer is the wrong tool for an unconditional requirement.
 The gate hooks are `.mjs` and need a JS runtime. Install [node](https://nodejs.org) or
 ensure `bun` is on PATH, then re-run `router-skills`.
 
+**`bun` was not found during installation.**
+Install Bun, open a new shell so its executable is on PATH, and run the bootstrap or the
+checkout commands again. Confirm the runtime resolves before retrying:
+
+```powershell
+Get-Command bun
+```
+
+```bash
+command -v bun
+```
+
+**`router-skills` is not found after installation.**
+The launcher directory must be on PATH. On Windows, check `%USERPROFILE%\.local\bin` in
+the User PATH and open a new PowerShell. On Linux/macOS, source the startup file selected by
+the installer (`.profile`, `.bashrc`, or `.zshrc`) or open a new shell. Then run
+`router-skills --verify`.
+
+**The repository or launcher path contains spaces.**
+Keep paths quoted when running checkout commands, and do not remove the quotes from the
+generated launcher commands. The Windows `.cmd` launcher and the POSIX launcher quote the
+repository and Bun paths so they can run from paths containing spaces.
+
+**Bun was moved or the recorded runtime no longer exists.**
+Restore Bun on PATH, then re-run the installer from `~/.router-skills`. The launcher checks
+the saved runtime path and falls back to `bun` resolved on PATH when possible.
+
 **opencode changes seem to go nowhere (Windows or custom setups).**
 opencode reads config from `$XDG_CONFIG_HOME/opencode` when that env var is set, otherwise
 `~/.config/opencode` (on every OS — it does **not** use `%APPDATA%`). router-skills follows
@@ -370,8 +447,9 @@ waiting on a prompt.
 - **No junk skills.** Skills without valid `SKILL.md` frontmatter are skipped and reported
   (BOM- and CRLF-aware), so neither tool logs parse errors at startup.
 - **Fail-open enforcement.** Hooks and plugin are wrapped — a crash never blocks your prompt.
-- **Backups before every mutation**, and stale-link pruning only removes links that resolve
-  back into this repo's pack — never your own files.
+- **Existing `opencode.json` is backed up before update**; the opencode plugin and rule files,
+  launcher, and shell startup-file writes are not backed up. Stale-link pruning only removes
+  links that resolve back into this repo's pack — never your own files.
 - **Failures are surfaced, not hidden.** A link that can't be created is counted and shown,
   not silently dropped.
 
@@ -400,7 +478,7 @@ they don't use the global `SKILL.md` discovery model.
 bun install
 bun run typecheck   # tsc --noEmit (strict: noUnusedLocals/Parameters)
 bun run validate    # skill + agent pack integrity gate
-bun run test        # pure-logic tests (paths, runner pick, XDG, upsert, conversion…)
+bun test src/ --timeout 30000  # full suite; allows slower E2E tests
 bun run gen         # regenerate src/templates.ts from the gate/ sources
 bun run build       # regen + compile linux/windows/macos binaries into dist/
 ```
@@ -417,6 +495,7 @@ src/
   detect.ts                which tools are installed
   paths.ts                 pure path builders (XDG-aware, win-tested)
   util.ts                  fs helpers, runtime detection, cross-runtime PATH scan
+  launcher-install.ts      shared Windows/POSIX launcher and PATH installer
   templates.ts             AUTO-GENERATED from gate/ (do not hand-edit)
   mindset-template.ts      FABLE protocol text (hand-maintained)
   verify.ts                read-only health audit
@@ -444,6 +523,15 @@ agents/                    bundled agent pack (by category)
   git tag v0.6.0 && git push origin v0.6.0
   ```
 
+## Security note
+
+Review bootstrap scripts before executing remote commands such as `irm ... | iex` or
+`curl ... | bash`. Prefer downloading the script or cloning the repository first when you
+need to inspect it. Never place credentials, tokens, or other secrets in commands, issues,
+logs, or this README.
+
 ## License
 
 MIT
+
+<!-- skill_resolution: paths-injected -->
