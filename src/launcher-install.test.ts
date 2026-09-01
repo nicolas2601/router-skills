@@ -1,4 +1,7 @@
 import { test, expect } from "bun:test"
+
+// cmd.exe shim tests can only execute on a real Windows host
+const windowsTest = test.skipIf(process.platform !== "win32")
 import { existsSync, readFileSync } from "node:fs"
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
@@ -115,7 +118,7 @@ test("bootstrap scripts delegate launcher policy to the shared TypeScript source
   expect(powershell).not.toContain("function Install-Launcher")
 })
 
-test("generated Windows shim executes a runtime and preserves arguments from any cwd", () => {
+windowsTest("generated Windows shim executes a runtime and preserves arguments from any cwd", () => {
   const sandbox = mkdtempSync(nodePath.join(tmpdir(), "router-skills-shim-"))
   try {
     const root = nodePath.join(sandbox, "repo with spaces")
@@ -136,7 +139,7 @@ test("generated Windows shim executes a runtime and preserves arguments from any
   }
 })
 
-test("generated Windows shim ignores a missing persisted runtime and falls back to PATH", () => {
+windowsTest("generated Windows shim ignores a missing persisted runtime and falls back to PATH", () => {
   const sandbox = mkdtempSync(nodePath.join(tmpdir(), "router-skills-shim-fallback-"))
   try {
     const root = nodePath.join(sandbox, "repo")
@@ -168,7 +171,7 @@ test("generated Windows shim ignores a missing persisted runtime and falls back 
   }
 })
 
-test("generated Windows shim ignores a persisted runtime directory and falls back to PATH", () => {
+windowsTest("generated Windows shim ignores a persisted runtime directory and falls back to PATH", () => {
   const sandbox = mkdtempSync(nodePath.join(tmpdir(), "router-skills-shim-directory-fallback-"))
   try {
     const root = nodePath.join(sandbox, "repo")
@@ -195,7 +198,7 @@ test("generated Windows shim ignores a persisted runtime directory and falls bac
   }
 })
 
-test("generated Windows shim ignores a persisted non-executable file and falls back to PATH", () => {
+windowsTest("generated Windows shim ignores a persisted non-executable file and falls back to PATH", () => {
   const sandbox = mkdtempSync(nodePath.join(tmpdir(), "router-skills-shim-file-fallback-"))
   try {
     const root = nodePath.join(sandbox, "repo")
@@ -223,7 +226,7 @@ test("generated Windows shim ignores a persisted non-executable file and falls b
   }
 })
 
-test("generated Windows shim executes a Bun path containing literal percent signs", () => {
+windowsTest("generated Windows shim executes a Bun path containing literal percent signs", () => {
   const sandbox = mkdtempSync(nodePath.join(tmpdir(), "router-skills-shim-percent-"))
   try {
     const root = nodePath.join(sandbox, "repo")
@@ -248,7 +251,7 @@ test("generated Windows shim executes a Bun path containing literal percent sign
   }
 })
 
-test("generated Windows shim preserves cmd metacharacters in quoted paths", () => {
+windowsTest("generated Windows shim preserves cmd metacharacters in quoted paths", () => {
   const sandbox = mkdtempSync(nodePath.join(tmpdir(), "router-skills-shim-metachar-"))
   try {
     const root = nodePath.join(sandbox, "repo &(!)")
@@ -273,7 +276,7 @@ test("generated Windows shim preserves cmd metacharacters in quoted paths", () =
   }
 })
 
-test("generated Windows shim preserves a caret in quoted paths", () => {
+windowsTest("generated Windows shim preserves a caret in quoted paths", () => {
   const sandbox = mkdtempSync(nodePath.join(tmpdir(), "router-skills-shim-caret-"))
   try {
     const root = nodePath.join(sandbox, "repo ^")
@@ -298,7 +301,7 @@ test("generated Windows shim preserves a caret in quoted paths", () => {
   }
 })
 
-test("generated Windows shim reports an actionable error when Bun is absent", () => {
+windowsTest("generated Windows shim reports an actionable error when Bun is absent", () => {
   const sandbox = mkdtempSync(nodePath.join(tmpdir(), "router-skills-shim-no-bun-"))
   try {
     const launcher = nodePath.join(sandbox, "router-skills.cmd")
