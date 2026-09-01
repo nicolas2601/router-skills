@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { routerWiringCheck, indexHealthCheck } from "./verify.ts"
+import { routerWiringCheck, indexHealthCheck, isValidOpencodeAgentFrontmatter } from "./verify.ts"
 
 // T046/design Observability section: routerWiringCheck is pure — ok:true only when BOTH
 // the new hooks (skill-router in UserPromptSubmit, skill-usage-tracker in PostToolUse)
@@ -59,4 +59,10 @@ test("indexHealthCheck: ok:false on a 0-row index (silent-no-op becomes visible)
   const missing = indexHealthCheck("/idx.tsv", missingFs, () => 5000)
   expect(missing.ok).toBe(false)
   expect(missing.rows).toBe(0)
+})
+
+test("isValidOpencodeAgentFrontmatter: accepts mode after a long description", () => {
+  const description = "x".repeat(700)
+  const agent = `---\ndescription: ${description}\nmode: subagent\n---\n\n# Agent`
+  expect(isValidOpencodeAgentFrontmatter(agent)).toBe(true)
 })

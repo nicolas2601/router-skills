@@ -1,14 +1,16 @@
-# router-skills — Windows installer (one command, PowerShell).
+# router-skills - Windows installer (one command, PowerShell).
 #
 #   irm https://raw.githubusercontent.com/nicolas2601/router-skills/main/install.ps1 | iex
 #
 # Clones the repo, ensures bun is available (installs it if missing), then runs the
-# provisioner. git is the only hard prerequisite. No admin needed — skill/agent links
+# provisioner. git is the only hard prerequisite. No admin needed - skill/agent links
 # use directory junctions, not symlinks.
 
 $ErrorActionPreference = "Stop"
 $Repo = "https://github.com/nicolas2601/router-skills.git"
-$Dest = Join-Path $HOME ".router-skills"
+$UserProfile = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+$Dest = Join-Path $UserProfile ".router-skills"
+$BinDir = Join-Path $UserProfile ".local\bin"
 
 function Have($cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 
@@ -18,12 +20,12 @@ if (-not (Have git)) {
   exit 1
 }
 
-# bun runs the provisioner — install automatically if missing.
+# bun runs the provisioner - install automatically if missing.
 if (-not (Have bun)) {
-  Write-Host "bun not found — installing it (https://bun.sh) ..." -ForegroundColor Yellow
+  Write-Host "bun not found - installing it (https://bun.sh) ..." -ForegroundColor Yellow
   powershell -NoProfile -Command "irm bun.sh/install.ps1 | iex"
   # bun installs to %USERPROFILE%\.bun\bin; make it visible for the rest of this session.
-  $bunBin = Join-Path $HOME ".bun\bin"
+  $bunBin = Join-Path $UserProfile ".bun\bin"
   if (Test-Path $bunBin) { $env:Path = "$bunBin;$env:Path" }
   if (-not (Have bun)) {
     Write-Host "bun installed but 'bun' is still not on PATH." -ForegroundColor Red
@@ -44,6 +46,10 @@ Push-Location $Dest
 try {
   Write-Host "Installing dependencies ..." -ForegroundColor Cyan
   bun install --silent
+  bun run src/launcher-install.ts --platform windows --repo-path $Dest
+  # A child process cannot update this PowerShell process. The shared installer owns
+  # persistent User PATH; this is only the current-session convenience path.
+  $env:Path = bun run src/launcher-install.ts --platform windows --session-path --bin-dir $BinDir
   bun run src/index.ts @args
 } finally {
   Pop-Location
