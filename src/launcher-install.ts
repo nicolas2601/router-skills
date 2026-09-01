@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import nodePath from "node:path"
-import { fileURLToPath } from "node:url"
 import { whichSync } from "./util.ts"
 
 export type LauncherPlatform = "windows" | "posix"
@@ -148,4 +147,6 @@ function main() {
   console.log(`router-skills launcher installed at ${result.launcher}`)
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()
+// import.meta.main stays false for bundled imports inside compiled binaries,
+// where the path comparison against process.argv[1] gives a false positive
+if (import.meta.main) main()
